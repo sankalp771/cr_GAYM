@@ -113,6 +113,19 @@
       </section>
     </main>
 
+    <div id="winner-modal" class="modal-shell hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="winner-title">
+        <div class="eyebrow">Match Finished</div>
+        <h2 id="winner-title">Winner</h2>
+        <p id="winner-message" class="modal-copy">Player 1 wins the local prototype match.</p>
+        <div class="actions modal-actions">
+          <button type="button" id="play-again-button" class="primary-button">Play Again</button>
+          <button type="button" id="close-modal-button" class="ghost-button">Close</button>
+        </div>
+      </div>
+    </div>
+
     <script src="./app.js"></script>
   </body>
   </html>

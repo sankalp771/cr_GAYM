@@ -50,6 +50,11 @@ const turnLabel = document.querySelector("#turn-label");
 const timerLabel = document.querySelector("#timer-label");
 const statusText = document.querySelector("#status-text");
 const timerBar = document.querySelector("#timer-bar");
+const winnerModal = document.querySelector("#winner-modal");
+const winnerTitle = document.querySelector("#winner-title");
+const winnerMessage = document.querySelector("#winner-message");
+const playAgainButton = document.querySelector("#play-again-button");
+const closeModalButton = document.querySelector("#close-modal-button");
 
 function createEmptyBoard(size) {
   return Array.from({ length: size }, (_, row) =>
@@ -111,36 +116,44 @@ function getValidMoves(board, playerId) {
 
 function applyMove(board, playerId, row, col) {
   const nextBoard = cloneBoard(board);
-  const queue = [{ row, col }];
   const touchedCells = new Set([`${row}:${col}`]);
 
   nextBoard[row][col].ownerId = playerId;
   nextBoard[row][col].count += 1;
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const cell = nextBoard[current.row][current.col];
-    const criticalMass = getCriticalMass(nextBoard, current.row, current.col);
+  while (true) {
+    const unstableCells = [];
 
-    if (cell.count < criticalMass) {
-      continue;
+    nextBoard.forEach((boardRow) => {
+      boardRow.forEach((cell) => {
+        if (cell.count >= getCriticalMass(nextBoard, cell.row, cell.col)) {
+          unstableCells.push({ row: cell.row, col: cell.col });
+        }
+      });
+    });
+
+    if (unstableCells.length === 0) {
+      break;
     }
 
-    cell.count -= criticalMass;
-    if (cell.count === 0) {
-      cell.ownerId = null;
-    }
+    unstableCells.forEach((unstableCell) => {
+      const cell = nextBoard[unstableCell.row][unstableCell.col];
+      const criticalMass = getCriticalMass(nextBoard, unstableCell.row, unstableCell.col);
 
-    for (const [neighborRow, neighborCol] of getNeighbors(nextBoard, current.row, current.col)) {
-      const neighborCell = nextBoard[neighborRow][neighborCol];
-      neighborCell.ownerId = playerId;
-      neighborCell.count += 1;
-      touchedCells.add(`${neighborRow}:${neighborCol}`);
-
-      if (neighborCell.count >= getCriticalMass(nextBoard, neighborRow, neighborCol)) {
-        queue.push({ row: neighborRow, col: neighborCol });
+      cell.count -= criticalMass;
+      if (cell.count === 0) {
+        cell.ownerId = null;
+      } else {
+        cell.ownerId = playerId;
       }
-    }
+
+      for (const [neighborRow, neighborCol] of getNeighbors(nextBoard, unstableCell.row, unstableCell.col)) {
+        const neighborCell = nextBoard[neighborRow][neighborCol];
+        neighborCell.ownerId = playerId;
+        neighborCell.count += 1;
+        touchedCells.add(`${neighborRow}:${neighborCol}`);
+      }
+    });
   }
 
   const flashTick = Date.now();
@@ -219,6 +232,18 @@ function clearTimer() {
   }
 }
 
+function openWinnerModal(winner) {
+  winnerTitle.textContent = `${winner.name} Wins`;
+  winnerMessage.textContent = ``;
+  winnerModal.classList.remove("hidden");
+  winnerModal.setAttribute("aria-hidden", "false");
+}
+
+function closeWinnerModal() {
+  winnerModal.classList.add("hidden");
+  winnerModal.setAttribute("aria-hidden", "true");
+}
+
 function handleAutoMove() {
   const currentPlayer = appState.players[appState.currentPlayerIndex];
   if (!currentPlayer || currentPlayer.isEliminated || appState.phase !== "playing") {
@@ -278,6 +303,10 @@ function commitMove(row, col, isAutoMove = false) {
 
   if (winnerId) {
     appState.phase = "finished";
+    const winner = appState.players.find((player) => player.id === winnerId);
+    if (winner) {
+      openWinnerModal(winner);
+    }
     render(isAutoMove);
     return;
   }
@@ -429,6 +458,7 @@ function renderTimer() {
 }
 
 function render(isAutoMove = false) {
+  document.body.classList.toggle("match-active", appState.phase !== "setup");
   presetLabel.textContent = formatPresetLabel(appState.settings.presetId);
 
   if (appState.phase === "setup") {
@@ -477,6 +507,7 @@ function startMatch() {
   appState.lastAutoMove = null;
   appState.moveCount = 0;
   appState.lastMoveSummary = "";
+  closeWinnerModal();
   startTimerLoop();
   render();
 }
@@ -491,6 +522,7 @@ function resetPrototype() {
   appState.lastAutoMove = null;
   appState.moveCount = 0;
   appState.lastMoveSummary = "";
+  closeWinnerModal();
   render();
 }
 
@@ -513,6 +545,20 @@ setupForm.addEventListener("submit", (event) => {
 resetButton.addEventListener("click", () => {
   renderPlayerFields(Number(playersSelect.value));
   resetPrototype();
+});
+
+playAgainButton.addEventListener("click", () => {
+  startMatch();
+});
+
+closeModalButton.addEventListener("click", () => {
+  closeWinnerModal();
+});
+
+winnerModal.addEventListener("click", (event) => {
+  if (event.target === winnerModal || event.target.classList.contains("modal-backdrop")) {
+    closeWinnerModal();
+  }
 });
 
 renderPlayerFields(appState.settings.playerCount);
