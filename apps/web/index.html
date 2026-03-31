@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chain Reaction Global</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="background-orb background-orb-a"></div>
+    <div class="background-orb background-orb-b"></div>
+    <div class="background-grid"></div>
+
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div class="eyebrow">Phase 1 Local Prototype</div>
+        <h1>Chain Reaction Global</h1>
+        <p class="hero-copy">
+          Glow-styled Chain Reaction with the real board presets, mobile-first
+          layout, turn timer, and automatic timeout moves.
+        </p>
+
+        <form id="setup-form" class="setup-panel">
+          <div class="setup-grid">
+            <label class="field">
+              <span>Board Preset</span>
+              <select id="preset-select" name="preset">
+                <option value="classic">Classic (6)</option>
+                <option value="large">Large (8)</option>
+                <option value="hd">HD (10)</option>
+                <option value="xl">XL (12)</option>
+                <option value="xxl">XXL (14)</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Players</span>
+              <select id="players-select" name="players">
+                <option value="2">2 Players</option>
+                <option value="3">3 Players</option>
+                <option value="4">4 Players</option>
+                <option value="5">5 Players</option>
+                <option value="6">6 Players</option>
+                <option value="7">7 Players</option>
+                <option value="8">8 Players</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="player-fields" class="player-fields"></div>
+
+          <div class="actions">
+            <button type="submit" class="primary-button">Start Local Match</button>
+            <button type="button" id="reset-button" class="ghost-button">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="game-layout">
+        <aside class="game-sidebar">
+          <div class="card match-card">
+            <div class="card-header">
+              <span>Match Status</span>
+              <span id="preset-label" class="pill">Classic (6x6)</span>
+            </div>
+
+            <div class="match-meta">
+              <div class="meta-block">
+                <span class="meta-label">Turn</span>
+                <strong id="turn-label">Not started</strong>
+              </div>
+              <div class="meta-block">
+                <span class="meta-label">Timer</span>
+                <strong id="timer-label">20s</strong>
+              </div>
+            </div>
+
+            <div class="turn-progress">
+              <div id="timer-bar" class="turn-progress-bar"></div>
+            </div>
+
+            <p id="status-text" class="status-text">
+              Configure the match and start a local prototype round.
+            </p>
+          </div>
+
+          <div class="card roster-card">
+            <div class="card-header">
+              <span>Players</span>
+              <span id="players-label" class="pill">0 active</span>
+            </div>
+            <div id="player-roster" class="player-roster"></div>
+          </div>
+
+          <div class="card rules-card">
+            <div class="card-header">
+              <span>Prototype Notes</span>
+            </div>
+            <ul class="rules-list">
+              <li>Only empty or self-owned cells are playable.</li>
+              <li>Corners burst at 2, edges at 3, center cells at 4.</li>
+              <li>Timeout triggers a random valid auto-move.</li>
+              <li>Players are only eliminated after they have entered play.</li>
+            </ul>
+          </div>
+        </aside>
+
+        <section class="board-section">
+          <div class="board-frame">
+            <div id="board" class="board" aria-label="Chain Reaction board"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>
