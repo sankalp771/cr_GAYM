@@ -114,6 +114,58 @@ Suggested event families:
 - reactions
 - reconnect/resume
 
+## Initial WebSocket Contract
+
+The first multiplayer implementation may use native WebSockets with JSON messages to avoid dependency overhead.
+
+Envelope shape:
+
+```json
+{
+  "type": "event_name",
+  "payload": {}
+}
+```
+
+Client-to-server events:
+
+- `session.restore`
+- `room.create`
+- `room.join`
+- `room.leave`
+- `room.ready`
+- `room.start`
+- `match.move`
+
+Server-to-client events:
+
+- `session.ready`
+- `room.snapshot`
+- `room.error`
+- `match.started`
+- `match.updated`
+- `match.finished`
+
+## Initial Room Flow
+
+1. Client opens a WebSocket connection.
+2. Server assigns or restores a session token.
+3. Host creates a room with:
+   - display name
+   - board preset
+   - player capacity from 2 to 8
+4. Other players join with:
+   - room code
+   - display name
+5. Server broadcasts a full room snapshot after every lobby change.
+6. Non-host players toggle ready state.
+7. Host can start only when:
+   - room is full
+   - all non-host players are ready
+8. Server creates the authoritative match state and broadcasts it.
+9. Players submit move intents.
+10. Server validates the move, resolves the board, advances the timer, and broadcasts the next snapshot.
+
 ## Suggested Data Model
 
 ### Room

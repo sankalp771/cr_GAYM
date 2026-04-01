@@ -16,12 +16,22 @@
         <div class="eyebrow">Phase 1 Local Prototype</div>
         <h1>Chain Reaction Global</h1>
         <p class="hero-copy">
-          Glow-styled Chain Reaction with the real board presets, mobile-first
-          layout, turn timer, and automatic timeout moves.
+          Real-time room prototype with native WebSockets, host-controlled lobbies,
+          ready states, and synchronized chain reactions across devices.
         </p>
 
         <form id="setup-form" class="setup-panel">
           <div class="setup-grid">
+            <label class="field">
+              <span>Your Name</span>
+              <input id="display-name-input" name="displayName" maxlength="20" value="Player" autocomplete="off" />
+            </label>
+
+            <label class="field">
+              <span>Room Code</span>
+              <input id="room-code-input" name="roomCode" maxlength="6" placeholder="ABC123" autocomplete="off" />
+            </label>
+
             <label class="field">
               <span>Board Preset</span>
               <select id="preset-select" name="preset">
@@ -47,11 +57,15 @@
             </label>
           </div>
 
-          <div id="player-fields" class="player-fields"></div>
+          <div class="lobby-actions">
+            <button type="submit" data-action="create" class="primary-button">Create Room</button>
+            <button type="submit" data-action="join" class="ghost-button">Join Room</button>
+            <button type="button" id="leave-room-button" class="ghost-button">Leave Room</button>
+          </div>
 
           <div class="actions">
-            <button type="submit" class="primary-button">Start Local Match</button>
-            <button type="button" id="reset-button" class="ghost-button">Reset</button>
+            <button type="button" id="ready-button" class="primary-button">Ready Up</button>
+            <button type="button" id="start-match-button" class="primary-button">Start Match</button>
           </div>
         </form>
       </section>
@@ -62,6 +76,17 @@
             <div class="card-header">
               <span>Match Status</span>
               <span id="preset-label" class="pill">Classic (6x6)</span>
+            </div>
+
+            <div class="room-meta">
+              <div class="meta-block">
+                <span class="meta-label">Room</span>
+                <strong id="room-label">No room</strong>
+              </div>
+              <div class="meta-block">
+                <span class="meta-label">Phase</span>
+                <strong id="phase-label">Idle</strong>
+              </div>
             </div>
 
             <div class="match-meta">
@@ -80,7 +105,7 @@
             </div>
 
             <p id="status-text" class="status-text">
-              Configure the match and start a local prototype round.
+              Create a room or join one with a code to enter the lobby.
             </p>
           </div>
 
@@ -126,6 +151,6 @@
       </div>
     </div>
 
-    <script src="./app.js"></script>
+    <script src="./client.js"></script>
   </body>
   </html>

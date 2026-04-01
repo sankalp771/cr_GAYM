@@ -1,42 +1,21 @@
 # Chain Reaction Global
 
-Reference-first repository for building a glow-styled, real-time multiplayer Chain Reaction game for the web.
+Next.js + TypeScript build of a glow-styled Chain Reaction game with separated local and multiplayer flows.
 
-## Purpose
+## Current Structure
 
-This repo will grow in stages:
+- `/`: home screen with mode selection
+- `/local`: stable local game mode
+- `/multiplayer`: isolated multiplayer workspace for the later socket fix
 
-1. Nail the classic Chain Reaction gameplay.
-2. Add premium glow/neon presentation.
-3. Ship private room multiplayer with synchronized turns.
-4. Add ranked/global competitive systems on top of the stable core.
+## Run
 
-## Reference Docs
+1. Install dependencies with `npm install`
+2. Start the app with `npm run dev`
+3. Open `http://localhost:3000`
 
-Use these files first before scanning code:
+## Notes
 
-- `docs/PRODUCT.md`: game vision, confirmed requirements, rules, and UX decisions.
-- `docs/ARCHITECTURE.md`: system design, state ownership, networking approach, and scalability direction.
-- `docs/ROADMAP.md`: phased delivery plan from MVP to ranked/global play.
-
-## Working Rule
-
-Before adding major features, update the relevant docs so the implementation stays aligned with product and architecture decisions.
-
-## Local Prototype
-
-This repo now includes a no-dependency Phase 1 prototype:
-
-1. Run `npm run dev`
-2. Open `http://localhost:3000`
-
-Included in the prototype:
-
-- glow-styled responsive board
-- original-style board presets
-- 2 to 8 local players for rules validation
-- turn timer
-- random auto-play on timeout
-- elimination and winner detection
-
-Next phases will layer roomed WebSocket multiplayer, reconnect handling, reactions, and ranked systems onto the same core rules.
+- Local mode is intentionally separated so unfinished multiplayer work cannot break it.
+- Multiplayer will be resumed in Phase 3 after the room/socket flow is rebuilt cleanly.
+- Product and architecture references still live in `docs/`.
