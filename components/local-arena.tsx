@@ -216,31 +216,6 @@ export function LocalArena() {
       </section>
 
       <section className="arena-layout">
-        <div className="arena-topbar">
-          {[players[0], players[1]].map((player, index) => (
-            <article
-              key={player?.id ?? `slot-${index}`}
-              className={`battle-pill ${currentPlayer?.id === player?.id && phase === "playing" ? "active" : ""}`}
-              style={{ ["--player-color" as string]: player?.color ?? (index === 0 ? "#ff5b8a" : "#60a9ff") }}
-            >
-              <div className="battle-pill-main">
-                <span className="player-dot" />
-                <div>
-                  <strong>{player?.name ?? `Player ${index + 1}`}</strong>
-                  <p>{player ? `${countPlayerOrbs(board, player.id)} orbs` : "Ready"}</p>
-                </div>
-              </div>
-              <span className="battle-chip">{player?.isEliminated ? "Out" : currentPlayer?.id === player?.id ? "Turn" : "Live"}</span>
-            </article>
-          ))}
-
-          <article className="timer-core" style={{ ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}>
-            <span className="timer-core-label">{phase === "playing" ? "Turn Window" : "Arena Timer"}</span>
-            <strong>{(timerRemainingMs / 1000).toFixed(0).padStart(2, "0")}</strong>
-            <small>{currentPlayer?.name ?? "Waiting"}</small>
-          </article>
-        </div>
-
         <section className="board-stage">
           <aside className="arena-sidecard">
             <article className="status-cluster">
