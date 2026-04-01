@@ -1,5 +1,5 @@
-import { LocalGame } from "@/components/local-game";
+import { LocalArena } from "@/components/local-arena";
 
 export default function LocalPage() {
-  return <LocalGame />;
+  return <LocalArena />;
 }
