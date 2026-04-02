@@ -4,8 +4,9 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  applyMove,
   BOARD_PRESETS,
+  buildMoveAnimation,
+  buildVictorySweep,
   countPlayerOrbs,
   createEmptyBoard,
   getCriticalMass,
@@ -59,8 +60,10 @@ export function LocalArena() {
   const [statusText, setStatusText] = useState("Configure the arena and launch a local battle.");
   const [timerRemainingMs, setTimerRemainingMs] = useState(TURN_SECONDS * 1000);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const turnStartedAtRef = useRef<number>(0);
   const intervalRef = useRef<number | null>(null);
+  const timeoutRef = useRef<number[]>([]);
 
   const currentPlayer = players[currentPlayerIndex] ?? null;
   const winner = players.find((player) => player.id === winnerId) ?? null;
@@ -75,7 +78,7 @@ export function LocalArena() {
   }, [playerCount]);
 
   useEffect(() => {
-    if (phase !== "playing") {
+    if (phase !== "playing" || isResolving) {
       if (intervalRef.current) {
         window.clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -101,7 +104,37 @@ export function LocalArena() {
         intervalRef.current = null;
       }
     };
-  }, [phase, currentPlayerIndex]);
+  }, [phase, currentPlayerIndex, isResolving]);
+
+  useEffect(() => {
+    return () => {
+      timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      timeoutRef.current = [];
+    };
+  }, []);
+
+  function clearPendingTimeouts() {
+    timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    timeoutRef.current = [];
+  }
+
+  function waitForFrame(delayMs: number) {
+    return new Promise<void>((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        timeoutRef.current = timeoutRef.current.filter((entry) => entry !== timeoutId);
+        resolve();
+      }, delayMs);
+
+      timeoutRef.current.push(timeoutId);
+    });
+  }
+
+  async function playFrames(frames: Cell[][][], delayMs: number) {
+    for (const frame of frames) {
+      setBoard(frame);
+      await waitForFrame(delayMs);
+    }
+  }
 
   function evaluateEliminations(nextBoard: Cell[][], nextPlayers: Player[], nextMoveCount: number) {
     if (nextMoveCount < nextPlayers.length) {
@@ -122,13 +155,14 @@ export function LocalArena() {
     setWinnerId(nextWinnerId);
     setPhase("finished");
     setShowWinnerModal(true);
+    setIsResolving(false);
     const winnerPlayer = nextPlayers.find((player) => player.id === nextWinnerId);
     setStatusText(winnerPlayer ? `${winnerPlayer.name} detonated the deciding chain reaction.` : "Match finished.");
     setTimerRemainingMs(0);
   }
 
-  function handleMove(row: number, col: number, isAutoMove: boolean) {
-    if (phase !== "playing" || !currentPlayer) {
+  async function handleMove(row: number, col: number, isAutoMove: boolean) {
+    if (phase !== "playing" || !currentPlayer || isResolving) {
       return;
     }
 
@@ -137,41 +171,61 @@ export function LocalArena() {
       return;
     }
 
-    const nextBoard = applyMove(board, currentPlayer.id, row, col);
+    const actingPlayer = currentPlayer;
+    const { finalBoard, frames } = buildMoveAnimation(board, actingPlayer.id, row, col);
     const nextMoveCount = moveCount + 1;
     const nextPlayers = evaluateEliminations(
-      nextBoard,
-      players.map((player) => (player.id === currentPlayer.id ? { ...player, hasEnteredPlay: true } : { ...player })),
+      finalBoard,
+      players.map((player) => (player.id === actingPlayer.id ? { ...player, hasEnteredPlay: true } : { ...player })),
       nextMoveCount
     );
 
-    setBoard(nextBoard);
+    setIsResolving(true);
+    setStatusText(
+      isAutoMove
+        ? `${actingPlayer.name} ran out of time, so the arena is auto-playing the spread tile by tile.`
+        : `${actingPlayer.name} triggered a chain reaction.`
+    );
+    await playFrames(frames, 140);
+
+    setBoard(finalBoard);
     setMoveCount(nextMoveCount);
 
     const alivePlayers = nextPlayers.filter((player) => !player.isEliminated);
     if (nextMoveCount >= nextPlayers.length && alivePlayers.length === 1) {
+      setPlayers(nextPlayers);
+      setWinnerId(alivePlayers[0].id);
+      setStatusText(`${alivePlayers[0].name} is consuming the board.`);
+
+      const victoryFrames = buildVictorySweep(finalBoard, alivePlayers[0].id);
+      if (victoryFrames.length > 0) {
+        await playFrames(victoryFrames, 100);
+      }
+
       finishGame(nextPlayers, alivePlayers[0].id);
       return;
     }
 
     setPlayers(nextPlayers);
     setCurrentPlayerIndex((previous) => nextLivingPlayer(nextPlayers, previous));
+    setIsResolving(false);
     setStatusText(
       isAutoMove
-        ? `${currentPlayer.name} ran out of time, so the arena auto-played a valid move.`
-        : `${currentPlayer.name} made a move and shifted the board pressure.`
+        ? `${actingPlayer.name} ran out of time, so the arena auto-played a valid move.`
+        : `${actingPlayer.name} made a move and shifted the board pressure.`
     );
   }
 
   function handleAutoMove() {
-    if (!currentPlayer) return;
+    if (!currentPlayer || isResolving) return;
     const validMoves = getValidMoves(board, currentPlayer.id);
     if (validMoves.length === 0) return;
     const move = validMoves[Math.floor(Math.random() * validMoves.length)];
-    handleMove(move.row, move.col, true);
+    void handleMove(move.row, move.col, true);
   }
 
   function startGame() {
+    clearPendingTimeouts();
     const freshPlayers = buildPlayers(playerNames.slice(0, playerCount));
     setPlayers(freshPlayers);
     setBoard(createEmptyBoard(BOARD_PRESETS[presetId].size));
@@ -180,11 +234,13 @@ export function LocalArena() {
     setMoveCount(0);
     setWinnerId(null);
     setShowWinnerModal(false);
+    setIsResolving(false);
     setTimerRemainingMs(TURN_SECONDS * 1000);
     setStatusText(`${freshPlayers[0].name} enters the arena first.`);
   }
 
   function resetSetup() {
+    clearPendingTimeouts();
     setPlayers([]);
     setBoard(createEmptyBoard(BOARD_PRESETS[presetId].size));
     setPhase("setup");
@@ -192,6 +248,7 @@ export function LocalArena() {
     setMoveCount(0);
     setWinnerId(null);
     setShowWinnerModal(false);
+    setIsResolving(false);
     setStatusText("Configure the arena and launch a local battle.");
     setTimerRemainingMs(TURN_SECONDS * 1000);
   }
@@ -301,20 +358,21 @@ export function LocalArena() {
             </div>
 
             <div className="board-frame next-board-frame">
-              <div className="board" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}>
-                {board.flat().map((cell) => {
-                  const owner = players.find((player) => player.id === cell.ownerId) ?? null;
-                  const playable = phase === "playing" && currentPlayer ? isCellPlayable(cell, currentPlayer.id) : false;
-                  const critical = cell.count > 0 && cell.count === getCriticalMass(board, cell.row, cell.col) - 1;
+                <div className="board" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}>
+                  {board.flat().map((cell) => {
+                    const owner = players.find((player) => player.id === cell.ownerId) ?? null;
+                    const playable = phase === "playing" && currentPlayer && !isResolving ? isCellPlayable(cell, currentPlayer.id) : false;
+                    const critical = cell.count > 0 && cell.count === getCriticalMass(board, cell.row, cell.col) - 1;
 
-                  return (
+                    return (
                     <button
-                      key={`${cell.row}-${cell.col}-${cell.flashTick}-${cell.count}-${cell.ownerId ?? "empty"}`}
-                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${Date.now() - cell.flashTick < 380 ? "flash energized" : ""}`}
-                      style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
-                      onClick={() => handleMove(cell.row, cell.col, false)}
-                      type="button"
-                    >
+                        key={`${cell.row}-${cell.col}-${cell.flashTick}-${cell.count}-${cell.ownerId ?? "empty"}`}
+                        className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${Date.now() - cell.flashTick < 380 ? "flash energized" : ""}`}
+                        style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
+                        disabled={!playable}
+                        onClick={() => void handleMove(cell.row, cell.col, false)}
+                        type="button"
+                      >
                       {cell.count > 0 && owner ? <div className="orb-stack">{createOrbMarkup(cell.count, owner.color)}</div> : null}
                     </button>
                   );

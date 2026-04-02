@@ -26,6 +26,11 @@ export type Cell = {
   flashTick: number;
 };
 
+export type MoveAnimation = {
+  finalBoard: Cell[][];
+  frames: Cell[][][];
+};
+
 export const PLAYER_COLORS = [
   "#ff5b8a",
   "#42f5d7",
@@ -70,12 +75,24 @@ export function isCellPlayable(cell: Cell, playerId: string) {
   return cell.ownerId === null || cell.ownerId === playerId;
 }
 
-export function applyMove(board: Cell[][], playerId: string, row: number, col: number) {
+function snapshotBoard(board: Cell[][], highlightedCells: Array<[number, number]>, frameIndex: number) {
+  const snapshot = cloneBoard(board);
+  const flashTick = Date.now() + frameIndex;
+
+  highlightedCells.forEach(([cellRow, cellCol]) => {
+    snapshot[cellRow][cellCol].flashTick = flashTick;
+  });
+
+  return snapshot;
+}
+
+export function buildMoveAnimation(board: Cell[][], playerId: string, row: number, col: number): MoveAnimation {
   const nextBoard = cloneBoard(board);
-  const touchedCells = new Set([`${row}:${col}`]);
+  const frames: Cell[][][] = [];
 
   nextBoard[row][col].ownerId = playerId;
   nextBoard[row][col].count += 1;
+  frames.push(snapshotBoard(nextBoard, [[row, col]], frames.length));
 
   while (true) {
     const unstableCells: Array<{ row: number; col: number }> = [];
@@ -98,23 +115,31 @@ export function applyMove(board: Cell[][], playerId: string, row: number, col: n
 
       cell.count -= criticalMass;
       cell.ownerId = cell.count === 0 ? null : playerId;
+      frames.push(snapshotBoard(nextBoard, [[unstableCell.row, unstableCell.col]], frames.length));
 
       getNeighbors(nextBoard, unstableCell.row, unstableCell.col).forEach(([neighborRow, neighborCol]) => {
         const neighborCell = nextBoard[neighborRow][neighborCol];
         neighborCell.ownerId = playerId;
         neighborCell.count += 1;
-        touchedCells.add(`${neighborRow}:${neighborCol}`);
+        frames.push(snapshotBoard(nextBoard, [[unstableCell.row, unstableCell.col], [neighborRow, neighborCol]], frames.length));
       });
     });
   }
 
-  const flashTick = Date.now();
-  touchedCells.forEach((key) => {
-    const [cellRow, cellCol] = key.split(":").map(Number);
-    nextBoard[cellRow][cellCol].flashTick = flashTick;
-  });
+  return { finalBoard: nextBoard, frames };
+}
 
-  return nextBoard;
+export function buildVictorySweep(board: Cell[][], winnerId: string) {
+  const nextBoard = cloneBoard(board);
+  const occupiedCells = nextBoard
+    .flat()
+    .filter((cell) => cell.count > 0)
+    .map((cell) => [cell.row, cell.col] as [number, number]);
+
+  return occupiedCells.map(([row, col], frameIndex) => {
+    nextBoard[row][col].ownerId = winnerId;
+    return snapshotBoard(nextBoard, [[row, col]], frameIndex);
+  });
 }
 
 export function countPlayerOrbs(board: Cell[][], playerId: string) {
