@@ -1,3 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --color-arena-cyan: #8ef9ff;
+  --color-arena-ink: #04060f;
+  --color-arena-panel: rgba(8, 14, 30, 0.78);
+}
+
 :root {
   --bg: #04060f;
   --panel: rgba(8, 14, 30, 0.78);

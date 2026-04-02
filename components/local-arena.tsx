@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   BOARD_PRESETS,
   buildMoveAnimation,
@@ -46,6 +47,21 @@ function createOrbMarkup(count: number, color: string) {
     <span key={`${color}-${count}-${index}`} className={`orb count-${Math.min(count, 4)}`} style={{ ["--player-color" as string]: color }} />
   ));
 }
+
+const panelReveal = {
+  initial: { opacity: 0, y: 24, filter: "blur(10px)" },
+  animate: { opacity: 1, y: 0, filter: "blur(0px)" },
+  transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const }
+};
+
+const staggerList = {
+  animate: {
+    transition: {
+      staggerChildren: 0.05,
+      delayChildren: 0.06
+    }
+  }
+};
 
 export function LocalArena() {
   const [presetId, setPresetId] = useState<PresetId>("classic");
@@ -254,28 +270,38 @@ export function LocalArena() {
   }
 
   return (
-    <main className="mode-shell">
+    <motion.main
+      className="mode-shell"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+    >
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       <div className="background-grid" />
 
-      <section className="mode-header-card local-header-card">
+      <motion.section
+        className="mode-header-card local-header-card border border-white/10 bg-white/5 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+        {...panelReveal}
+      >
         <div>
           <div className="eyebrow">Local Mode</div>
-          <h1>Local Arena</h1>
-          <p className="hero-copy">A board-first battle layout inspired by competitive neon game HUDs, while keeping the gameplay intact.</p>
+          <h1 className="max-w-3xl">Local Arena</h1>
+          <p className="hero-copy max-w-2xl">
+            A board-first battle layout inspired by competitive neon game HUDs, now with staged reactions and a cinematic finish.
+          </p>
         </div>
 
-        <div className="header-actions">
+        <motion.div className="header-actions" variants={staggerList} initial="initial" animate="animate">
           <Link href="/" className="ghost-link">Back Home</Link>
           <button className="primary-link button-reset" onClick={startGame} type="button">Start Battle</button>
-        </div>
-      </section>
+        </motion.div>
+      </motion.section>
 
       <section className="arena-layout">
         <section className="board-stage">
-          <aside className="arena-sidecard">
-            <article className="status-cluster">
+          <motion.aside className="arena-sidecard border border-cyan-200/10 bg-slate-950/55" {...panelReveal} transition={{ ...panelReveal.transition, delay: 0.05 }}>
+            <motion.article className="status-cluster" variants={staggerList} initial="initial" animate="animate">
               <div className="card-title-row compact-title-row">
                 <h2>Battle Setup</h2>
                 <span className="mode-badge">
@@ -323,66 +349,84 @@ export function LocalArena() {
               </div>
 
               <div className="button-row">
-                <button className="primary-link button-reset" type="button" onClick={startGame}>
+                <motion.button whileHover={{ y: -2, scale: 1.01 }} whileTap={{ scale: 0.98 }} className="primary-link button-reset" type="button" onClick={startGame}>
                   Start Battle
-                </button>
-                <button className="ghost-link button-reset" type="button" onClick={resetSetup}>
+                </motion.button>
+                <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="ghost-link button-reset" type="button" onClick={resetSetup}>
                   Reset
-                </button>
+                </motion.button>
               </div>
-            </article>
-          </aside>
+            </motion.article>
+          </motion.aside>
 
-          <section className="board-panel main-stage-panel">
-            <div className="stage-status">
+          <motion.section className="board-panel main-stage-panel" {...panelReveal} transition={{ ...panelReveal.transition, delay: 0.1 }}>
+            <motion.div
+              className="stage-status border border-white/8 bg-slate-950/60"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 0.12 }}
+            >
               <div className="stage-copy">
                 <span className="stage-kicker">Live Match Feed</span>
                 <h2>{phase === "playing" ? `${currentPlayer?.name ?? "Player"} controls the next move` : "Prepare the chain reaction"}</h2>
                 <p>{statusText}</p>
               </div>
 
-              <div className="stage-metrics">
-                <div className="metric-chip">
+              <motion.div className="stage-metrics" variants={staggerList} initial="initial" animate="animate">
+                <motion.div className="metric-chip" {...panelReveal} transition={{ duration: 0.32, delay: 0.16 }}>
                   <span>Preset</span>
                   <strong>{BOARD_PRESETS[presetId].label}</strong>
-                </div>
-                <div className="metric-chip">
+                </motion.div>
+                <motion.div className="metric-chip" {...panelReveal} transition={{ duration: 0.32, delay: 0.2 }}>
                   <span>Players</span>
                   <strong>{playerCount}</strong>
-                </div>
-                <div className="metric-chip">
+                </motion.div>
+                <motion.div className="metric-chip" {...panelReveal} transition={{ duration: 0.32, delay: 0.24 }}>
                   <span>Next</span>
                   <strong>{nextPlayer?.name ?? "Waiting"}</strong>
-                </div>
-              </div>
-            </div>
+                </motion.div>
+              </motion.div>
+            </motion.div>
 
-            <div className="board-frame next-board-frame">
-                <div className="board" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}>
-                  {board.flat().map((cell) => {
-                    const owner = players.find((player) => player.id === cell.ownerId) ?? null;
-                    const playable = phase === "playing" && currentPlayer && !isResolving ? isCellPlayable(cell, currentPlayer.id) : false;
+            <motion.div
+              className="board-frame next-board-frame border border-cyan-200/10 bg-slate-950/45"
+              initial={{ opacity: 0, scale: 0.98, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.18 }}
+            >
+              <motion.div
+                className="board"
+                key={`${presetId}-${phase}-${currentPlayer?.id ?? "idle"}-${moveCount}`}
+                animate={isResolving ? { scale: [1, 1.006, 1] } : { scale: 1 }}
+                transition={isResolving ? { duration: 0.35, repeat: Number.POSITIVE_INFINITY, repeatType: "mirror" } : { duration: 0.2 }}
+                style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}
+              >
+                {board.flat().map((cell) => {
+                  const owner = players.find((player) => player.id === cell.ownerId) ?? null;
+                  const playable = phase === "playing" && currentPlayer && !isResolving ? isCellPlayable(cell, currentPlayer.id) : false;
                     const critical = cell.count > 0 && cell.count === getCriticalMass(board, cell.row, cell.col) - 1;
 
                     return (
-                    <button
-                        key={`${cell.row}-${cell.col}-${cell.flashTick}-${cell.count}-${cell.ownerId ?? "empty"}`}
-                        className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${Date.now() - cell.flashTick < 380 ? "flash energized" : ""}`}
-                        style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
-                        disabled={!playable}
-                        onClick={() => void handleMove(cell.row, cell.col, false)}
-                        type="button"
-                      >
+                    <motion.button
+                      key={`${cell.row}-${cell.col}-${cell.flashTick}-${cell.count}-${cell.ownerId ?? "empty"}`}
+                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${Date.now() - cell.flashTick < 380 ? "flash energized" : ""}`}
+                      whileHover={playable ? { scale: 1.03 } : undefined}
+                      whileTap={playable ? { scale: 0.97 } : undefined}
+                      style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
+                      disabled={!playable}
+                      onClick={() => void handleMove(cell.row, cell.col, false)}
+                      type="button"
+                    >
                       {cell.count > 0 && owner ? <div className="orb-stack">{createOrbMarkup(cell.count, owner.color)}</div> : null}
-                    </button>
+                    </motion.button>
                   );
                 })}
-              </div>
-            </div>
-          </section>
+              </motion.div>
+            </motion.div>
+          </motion.section>
 
-          <aside className="arena-sidecard">
-            <article className="status-cluster">
+          <motion.aside className="arena-sidecard border border-cyan-200/10 bg-slate-950/55" {...panelReveal} transition={{ ...panelReveal.transition, delay: 0.15 }}>
+            <motion.article className="status-cluster" variants={staggerList} initial="initial" animate="animate">
               <div className="card-title-row compact-title-row">
                 <h2>Round Intel</h2>
                 <span className="mode-badge">{phase.toUpperCase()}</span>
@@ -398,19 +442,32 @@ export function LocalArena() {
                 </div>
               </div>
               <div className="turn-progress">
-                <div className="turn-progress-bar" style={{ width: `${(timerRemainingMs / (TURN_SECONDS * 1000)) * 100}%`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }} />
+                <motion.div
+                  className="turn-progress-bar"
+                  animate={{ width: `${(timerRemainingMs / (TURN_SECONDS * 1000)) * 100}%` }}
+                  transition={{ ease: "linear", duration: 0.12 }}
+                  style={{ ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}
+                />
               </div>
               <p className="info-copy">{statusText}</p>
-            </article>
+            </motion.article>
 
-            <article className="status-cluster">
+            <motion.article className="status-cluster" variants={staggerList} initial="initial" animate="animate">
               <div className="card-title-row compact-title-row">
                 <h2>Lineup</h2>
                 <span className="mode-badge">{activePlayers.length} Active</span>
               </div>
-              <div className="player-list">
+              <motion.div className="player-list" layout>
                 {players.map((player) => (
-                  <article key={player.id} className={`player-line ${currentPlayer?.id === player.id && phase === "playing" ? "current" : ""}`} style={{ ["--player-color" as string]: player.color }}>
+                  <motion.article
+                    key={player.id}
+                    layout
+                    initial={{ opacity: 0, x: 16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className={`player-line ${currentPlayer?.id === player.id && phase === "playing" ? "current" : ""}`}
+                    style={{ ["--player-color" as string]: player.color }}
+                  >
                     <div className="player-line-main">
                       <span className="player-dot" />
                       <div>
@@ -421,18 +478,25 @@ export function LocalArena() {
                     <span className={`player-tag ${player.isEliminated ? "eliminated" : ""}`}>
                       {player.isEliminated ? "Spectating" : currentPlayer?.id === player.id && phase === "playing" ? "Turn" : "Live"}
                     </span>
-                  </article>
+                  </motion.article>
                 ))}
-              </div>
-            </article>
-          </aside>
+              </motion.div>
+            </motion.article>
+          </motion.aside>
         </section>
       </section>
 
-      {showWinnerModal && winner ? (
-        <div className="modal-shell">
-          <div className="modal-backdrop" onClick={() => setShowWinnerModal(false)} />
-          <div className="modal-card victory-card">
+      <AnimatePresence>
+        {showWinnerModal && winner ? (
+        <motion.div className="modal-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div className="modal-backdrop" onClick={() => setShowWinnerModal(false)} />
+          <motion.div
+            className="modal-card victory-card border border-cyan-200/20 bg-slate-950/78"
+            initial={{ opacity: 0, y: 28, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.96 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
             <div className="eyebrow">Victory Sequence</div>
             <h2>{winner.name} Wins</h2>
             <p className="modal-copy">{winner.name} controlled the final chain reaction and cleared the board pressure.</p>
@@ -451,16 +515,17 @@ export function LocalArena() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="primary-link button-reset" type="button" onClick={startGame}>
+              <motion.button whileHover={{ y: -2, scale: 1.01 }} whileTap={{ scale: 0.98 }} className="primary-link button-reset" type="button" onClick={startGame}>
                 Rematch
-              </button>
-              <button className="ghost-link button-reset" type="button" onClick={() => setShowWinnerModal(false)}>
+              </motion.button>
+              <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="ghost-link button-reset" type="button" onClick={() => setShowWinnerModal(false)}>
                 Close
-              </button>
+              </motion.button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       ) : null}
-    </main>
+      </AnimatePresence>
+    </motion.main>
   );
 }
