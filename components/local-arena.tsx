@@ -2,25 +2,40 @@
 
 import type { CSSProperties } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  applyMove,
   BOARD_PRESETS,
-  buildMoveAnimation,
-  buildVictorySweep,
-  countPlayerOrbs,
   createEmptyBoard,
-  getCriticalMass,
-  getValidMoves,
-  isCellPlayable,
+  createInitialState,
+  criticalMass,
+  isLegalMove,
   PLAYER_COLORS,
-  type Cell,
+  pickAutoMove,
+  TURN_SECONDS,
+  type Board,
+  type GameState,
+  type GridConfig,
   type Player,
-  type PresetId,
-  TURN_SECONDS
-} from "@/lib/local-game";
+  type PresetId
+} from "@/lib/engine";
 
 type GamePhase = "setup" | "playing" | "finished";
+
+/** Cells lit up by the step currently on screen, keyed "row,col". */
+type FlashSet = ReadonlySet<string>;
+
+const FRAME_MS = 140;
+const VICTORY_FRAME_MS = 100;
+const EMPTY_FLASH: FlashSet = new Set<string>();
+
+const cellKey = (row: number, col: number) => `${row},${col}`;
+
+function configForPreset(presetId: PresetId): GridConfig {
+  const { size } = BOARD_PRESETS[presetId];
+  return { rows: size, cols: size };
+}
 
 function buildPlayers(playerNames: string[]): Player[] {
   return playerNames.map((name, index) => ({
@@ -32,19 +47,38 @@ function buildPlayers(playerNames: string[]): Player[] {
   }));
 }
 
-function nextLivingPlayer(players: Player[], currentIndex: number) {
-  for (let step = 1; step <= players.length; step += 1) {
-    const candidateIndex = (currentIndex + step) % players.length;
-    if (!players[candidateIndex].isEliminated) {
-      return candidateIndex;
-    }
-  }
-  return currentIndex;
+function countPlayerOrbsOnBoard(board: Board, playerId: string) {
+  return board.reduce(
+    (sum, row) => sum + row.reduce((rowSum, cell) => rowSum + (cell.ownerId === playerId ? cell.count : 0), 0),
+    0
+  );
+}
+
+/**
+ * Purely cosmetic end-of-match sweep: repaint every occupied cell in the
+ * winner's colour, one at a time. This is presentation, not a rule, which is why
+ * it lives here rather than in the engine.
+ */
+function buildVictorySweep(board: Board, winnerId: string): Array<{ board: Board; flash: FlashSet }> {
+  const working = board.map((row) => row.map((cell) => ({ ...cell })));
+  const occupied = working.flat().filter((cell) => cell.count > 0);
+
+  return occupied.map((cell) => {
+    working[cell.row][cell.col].ownerId = winnerId;
+    return {
+      board: working.map((row) => row.map((entry) => ({ ...entry }))),
+      flash: new Set([cellKey(cell.row, cell.col)])
+    };
+  });
 }
 
 function createOrbMarkup(count: number, color: string) {
   return Array.from({ length: count }, (_, index) => (
-    <span key={`${color}-${count}-${index}`} className={`orb count-${Math.min(count, 4)}`} style={{ ["--player-color" as string]: color }} />
+    <span
+      key={`${color}-${count}-${index}`}
+      className={`orb count-${Math.min(count, 4)}`}
+      style={{ ["--player-color" as string]: color }}
+    />
   ));
 }
 
@@ -67,31 +101,151 @@ export function LocalArena() {
   const [presetId, setPresetId] = useState<PresetId>("classic");
   const [playerCount, setPlayerCount] = useState(2);
   const [playerNames, setPlayerNames] = useState<string[]>(["Player 1", "Player 2"]);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [board, setBoard] = useState<Cell[][]>(() => createEmptyBoard(BOARD_PRESETS.classic.size));
+
+  // The authoritative match state lives in the engine. Everything else in this
+  // component is presentation: which frame is on screen, what the status line
+  // says, whether the modal is open.
+  const [game, setGame] = useState<GameState | null>(null);
+  const [displayBoard, setDisplayBoard] = useState<Board>(() => createEmptyBoard(configForPreset("classic")));
+  const [flashCells, setFlashCells] = useState<FlashSet>(EMPTY_FLASH);
+  const [frameTick, setFrameTick] = useState(0);
+
   const [phase, setPhase] = useState<GamePhase>("setup");
-  const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
-  const [moveCount, setMoveCount] = useState(0);
-  const [winnerId, setWinnerId] = useState<string | null>(null);
   const [statusText, setStatusText] = useState("Configure the arena and launch a local battle.");
   const [timerRemainingMs, setTimerRemainingMs] = useState(TURN_SECONDS * 1000);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+
   const turnStartedAtRef = useRef<number>(0);
   const intervalRef = useRef<number | null>(null);
   const timeoutRef = useRef<number[]>([]);
+  const autoMoveFiredRef = useRef(false);
 
-  const currentPlayer = players[currentPlayerIndex] ?? null;
-  const winner = players.find((player) => player.id === winnerId) ?? null;
+  const config = useMemo(() => configForPreset(presetId), [presetId]);
+  const players = useMemo(() => game?.players ?? [], [game]);
+  const currentPlayer = game && game.status === "playing" ? players[game.currentPlayerIndex] ?? null : null;
+  const winner = players.find((player) => player.id === game?.winnerId) ?? null;
   const activePlayers = useMemo(() => players.filter((player) => !player.isEliminated), [players]);
   const nextPlayer = useMemo(() => {
-    if (players.length < 2) return null;
-    return players[nextLivingPlayer(players, currentPlayerIndex)] ?? null;
-  }, [players, currentPlayerIndex]);
+    if (!game || game.status !== "playing" || players.length < 2) return null;
+    for (let step = 1; step <= players.length; step += 1) {
+      const candidate = players[(game.currentPlayerIndex + step) % players.length];
+      if (!candidate.isEliminated) return candidate;
+    }
+    return null;
+  }, [game, players]);
 
   useEffect(() => {
-    setPlayerNames((previous) => Array.from({ length: playerCount }, (_, index) => previous[index] ?? `Player ${index + 1}`));
+    setPlayerNames((previous) =>
+      Array.from({ length: playerCount }, (_, index) => previous[index] ?? `Player ${index + 1}`)
+    );
   }, [playerCount]);
+
+  function clearPendingTimeouts() {
+    timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    timeoutRef.current = [];
+  }
+
+  useEffect(() => {
+    return () => {
+      timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      timeoutRef.current = [];
+    };
+  }, []);
+
+  const waitForFrame = useCallback((delayMs: number) => {
+    return new Promise<void>((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        timeoutRef.current = timeoutRef.current.filter((entry) => entry !== timeoutId);
+        resolve();
+      }, delayMs);
+
+      timeoutRef.current.push(timeoutId);
+    });
+  }, []);
+
+  const playFrames = useCallback(
+    async (steps: Array<{ board: Board; flash: FlashSet }>, delayMs: number) => {
+      for (const step of steps) {
+        setDisplayBoard(step.board);
+        setFlashCells(step.flash);
+        setFrameTick((tick) => tick + 1);
+        await waitForFrame(delayMs);
+      }
+    },
+    [waitForFrame]
+  );
+
+  const runMove = useCallback(
+    async (row: number, col: number, isAutoMove: boolean) => {
+      if (!game || game.status !== "playing" || isResolving) return;
+
+      const actingPlayer = game.players[game.currentPlayerIndex];
+      const move = { playerId: actingPlayer.id, row, col };
+      if (!isLegalMove(game, move)) return;
+
+      const result = applyMove(game, move, { recordFrames: true });
+
+      setIsResolving(true);
+      setStatusText(
+        isAutoMove
+          ? `${actingPlayer.name} ran out of time, so the arena auto-played the spread tile by tile.`
+          : `${actingPlayer.name} triggered a chain reaction.`
+      );
+
+      await playFrames(
+        result.frames.map((frame) => ({
+          board: frame.board,
+          flash: new Set([
+            ...frame.exploded.map((cell) => cellKey(cell.row, cell.col)),
+            ...frame.received.map((cell) => cellKey(cell.row, cell.col))
+          ])
+        })),
+        FRAME_MS
+      );
+
+      setGame(result.state);
+      setDisplayBoard(result.state.board);
+      setFlashCells(EMPTY_FLASH);
+
+      if (result.state.status === "finished" && result.state.winnerId) {
+        const championName =
+          result.state.players.find((player) => player.id === result.state.winnerId)?.name ?? "Someone";
+        setStatusText(`${championName} is consuming the board.`);
+
+        const sweep = buildVictorySweep(result.state.board, result.state.winnerId);
+        if (sweep.length > 0) await playFrames(sweep, VICTORY_FRAME_MS);
+
+        setPhase("finished");
+        setShowWinnerModal(true);
+        setIsResolving(false);
+        setTimerRemainingMs(0);
+        setStatusText(`${championName} detonated the deciding chain reaction.`);
+        return;
+      }
+
+      setIsResolving(false);
+      setStatusText(
+        isAutoMove
+          ? `${actingPlayer.name} ran out of time, so the arena auto-played a valid move.`
+          : `${actingPlayer.name} made a move and shifted the board pressure.`
+      );
+    },
+    [game, isResolving, playFrames]
+  );
+
+  // The turn timer reads the move handler through a ref rather than closing over
+  // it. The interval is created once per turn, so capturing the handler directly
+  // would pin it to that render's board and current player, and the auto-played
+  // move would be computed from stale state.
+  const autoMoveRef = useRef<() => void>(() => {});
+  autoMoveRef.current = () => {
+    if (!game || game.status !== "playing" || isResolving || autoMoveFiredRef.current) return;
+    const move = pickAutoMove(game, Math.random);
+    if (!move) return;
+    autoMoveFiredRef.current = true;
+    void runMove(move.row, move.col, true);
+  };
 
   useEffect(() => {
     if (phase !== "playing" || isResolving) {
@@ -103,15 +257,13 @@ export function LocalArena() {
     }
 
     turnStartedAtRef.current = Date.now();
+    autoMoveFiredRef.current = false;
     setTimerRemainingMs(TURN_SECONDS * 1000);
 
     intervalRef.current = window.setInterval(() => {
       const remaining = Math.max(0, TURN_SECONDS * 1000 - (Date.now() - turnStartedAtRef.current));
       setTimerRemainingMs(remaining);
-
-      if (remaining === 0) {
-        handleAutoMove();
-      }
+      if (remaining === 0) autoMoveRef.current();
     }, 100);
 
     return () => {
@@ -120,154 +272,41 @@ export function LocalArena() {
         intervalRef.current = null;
       }
     };
-  }, [phase, currentPlayerIndex, isResolving]);
-
-  useEffect(() => {
-    return () => {
-      timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
-      timeoutRef.current = [];
-    };
-  }, []);
-
-  function clearPendingTimeouts() {
-    timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
-    timeoutRef.current = [];
-  }
-
-  function waitForFrame(delayMs: number) {
-    return new Promise<void>((resolve) => {
-      const timeoutId = window.setTimeout(() => {
-        timeoutRef.current = timeoutRef.current.filter((entry) => entry !== timeoutId);
-        resolve();
-      }, delayMs);
-
-      timeoutRef.current.push(timeoutId);
-    });
-  }
-
-  async function playFrames(frames: Cell[][][], delayMs: number) {
-    for (const frame of frames) {
-      setBoard(frame);
-      await waitForFrame(delayMs);
-    }
-  }
-
-  function evaluateEliminations(nextBoard: Cell[][], nextPlayers: Player[], nextMoveCount: number) {
-    if (nextMoveCount < nextPlayers.length) {
-      return nextPlayers;
-    }
-
-    return nextPlayers.map((player) => {
-      const owned = countPlayerOrbs(nextBoard, player.id);
-      if (player.hasEnteredPlay && owned === 0) {
-        return { ...player, isEliminated: true };
-      }
-      return player;
-    });
-  }
-
-  function finishGame(nextPlayers: Player[], nextWinnerId: string) {
-    setPlayers(nextPlayers);
-    setWinnerId(nextWinnerId);
-    setPhase("finished");
-    setShowWinnerModal(true);
-    setIsResolving(false);
-    const winnerPlayer = nextPlayers.find((player) => player.id === nextWinnerId);
-    setStatusText(winnerPlayer ? `${winnerPlayer.name} detonated the deciding chain reaction.` : "Match finished.");
-    setTimerRemainingMs(0);
-  }
-
-  async function handleMove(row: number, col: number, isAutoMove: boolean) {
-    if (phase !== "playing" || !currentPlayer || isResolving) {
-      return;
-    }
-
-    const cell = board[row][col];
-    if (!isCellPlayable(cell, currentPlayer.id)) {
-      return;
-    }
-
-    const actingPlayer = currentPlayer;
-    const { finalBoard, frames } = buildMoveAnimation(board, actingPlayer.id, row, col);
-    const nextMoveCount = moveCount + 1;
-    const nextPlayers = evaluateEliminations(
-      finalBoard,
-      players.map((player) => (player.id === actingPlayer.id ? { ...player, hasEnteredPlay: true } : { ...player })),
-      nextMoveCount
-    );
-
-    setIsResolving(true);
-    setStatusText(
-      isAutoMove
-        ? `${actingPlayer.name} ran out of time, so the arena is auto-playing the spread tile by tile.`
-        : `${actingPlayer.name} triggered a chain reaction.`
-    );
-    await playFrames(frames, 140);
-
-    setBoard(finalBoard);
-    setMoveCount(nextMoveCount);
-
-    const alivePlayers = nextPlayers.filter((player) => !player.isEliminated);
-    if (nextMoveCount >= nextPlayers.length && alivePlayers.length === 1) {
-      setPlayers(nextPlayers);
-      setWinnerId(alivePlayers[0].id);
-      setStatusText(`${alivePlayers[0].name} is consuming the board.`);
-
-      const victoryFrames = buildVictorySweep(finalBoard, alivePlayers[0].id);
-      if (victoryFrames.length > 0) {
-        await playFrames(victoryFrames, 100);
-      }
-
-      finishGame(nextPlayers, alivePlayers[0].id);
-      return;
-    }
-
-    setPlayers(nextPlayers);
-    setCurrentPlayerIndex((previous) => nextLivingPlayer(nextPlayers, previous));
-    setIsResolving(false);
-    setStatusText(
-      isAutoMove
-        ? `${actingPlayer.name} ran out of time, so the arena auto-played a valid move.`
-        : `${actingPlayer.name} made a move and shifted the board pressure.`
-    );
-  }
-
-  function handleAutoMove() {
-    if (!currentPlayer || isResolving) return;
-    const validMoves = getValidMoves(board, currentPlayer.id);
-    if (validMoves.length === 0) return;
-    const move = validMoves[Math.floor(Math.random() * validMoves.length)];
-    void handleMove(move.row, move.col, true);
-  }
+  }, [phase, isResolving, game?.currentPlayerIndex]);
 
   function startGame() {
     clearPendingTimeouts();
-    const freshPlayers = buildPlayers(playerNames.slice(0, playerCount));
-    setPlayers(freshPlayers);
-    setBoard(createEmptyBoard(BOARD_PRESETS[presetId].size));
+    const nextConfig = configForPreset(presetId);
+    const freshGame = createInitialState(nextConfig, buildPlayers(playerNames.slice(0, playerCount)));
+
+    setGame(freshGame);
+    setDisplayBoard(freshGame.board);
+    setFlashCells(EMPTY_FLASH);
     setPhase("playing");
-    setCurrentPlayerIndex(0);
-    setMoveCount(0);
-    setWinnerId(null);
     setShowWinnerModal(false);
     setIsResolving(false);
     setTimerRemainingMs(TURN_SECONDS * 1000);
-    setStatusText(`${freshPlayers[0].name} enters the arena first.`);
+    setStatusText(`${freshGame.players[0].name} enters the arena first.`);
   }
 
   function resetSetup() {
     clearPendingTimeouts();
-    setPlayers([]);
-    setBoard(createEmptyBoard(BOARD_PRESETS[presetId].size));
+    setGame(null);
+    setDisplayBoard(createEmptyBoard(configForPreset(presetId)));
+    setFlashCells(EMPTY_FLASH);
     setPhase("setup");
-    setCurrentPlayerIndex(0);
-    setMoveCount(0);
-    setWinnerId(null);
     setShowWinnerModal(false);
     setIsResolving(false);
     setStatusText("Configure the arena and launch a local battle.");
     setTimerRemainingMs(TURN_SECONDS * 1000);
   }
+
+  // Keep the idle board in step with the preset while still in setup.
+  useEffect(() => {
+    if (phase === "setup") setDisplayBoard(createEmptyBoard(configForPreset(presetId)));
+  }, [presetId, phase]);
+
+  const boardConfig = game?.config ?? config;
 
   return (
     <motion.main
@@ -396,26 +435,39 @@ export function LocalArena() {
             >
               <motion.div
                 className="board"
-                key={`${presetId}-${phase}-${currentPlayer?.id ?? "idle"}-${moveCount}`}
                 animate={isResolving ? { scale: [1, 1.006, 1] } : { scale: 1 }}
                 transition={isResolving ? { duration: 0.35, repeat: Number.POSITIVE_INFINITY, repeatType: "mirror" } : { duration: 0.2 }}
-                style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`, ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}
+                style={{
+                  gridTemplateColumns: `repeat(${boardConfig.cols}, minmax(0, 1fr))`,
+                  ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff"
+                }}
               >
-                {board.flat().map((cell) => {
+                {displayBoard.flat().map((cell) => {
                   const owner = players.find((player) => player.id === cell.ownerId) ?? null;
-                  const playable = phase === "playing" && currentPlayer && !isResolving ? isCellPlayable(cell, currentPlayer.id) : false;
-                    const critical = cell.count > 0 && cell.count === getCriticalMass(board, cell.row, cell.col) - 1;
+                  const playable =
+                    phase === "playing" && currentPlayer && !isResolving
+                      ? cell.ownerId === null || cell.ownerId === currentPlayer.id
+                      : false;
+                  const critical = cell.count > 0 && cell.count === criticalMass(cell.row, cell.col, boardConfig) - 1;
+                  const isFlashing = flashCells.has(cellKey(cell.row, cell.col));
 
-                    return (
+                  return (
                     <motion.button
-                      key={`${cell.row}-${cell.col}-${cell.flashTick}-${cell.count}-${cell.ownerId ?? "empty"}`}
-                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${Date.now() - cell.flashTick < 380 ? "flash energized" : ""}`}
+                      // The flash key changes only for cells lit by the current
+                      // step, remounting just those so the glow animation replays.
+                      key={`${cell.row}-${cell.col}-${isFlashing ? frameTick : 0}`}
+                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${isFlashing ? "flash energized" : ""}`}
                       whileHover={playable ? { scale: 1.03 } : undefined}
                       whileTap={playable ? { scale: 0.97 } : undefined}
                       style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
                       disabled={!playable}
-                      onClick={() => void handleMove(cell.row, cell.col, false)}
+                      onClick={() => void runMove(cell.row, cell.col, false)}
                       type="button"
+                      aria-label={
+                        owner
+                          ? `Row ${cell.row + 1}, column ${cell.col + 1}: ${cell.count} ${cell.count === 1 ? "orb" : "orbs"} owned by ${owner.name}`
+                          : `Row ${cell.row + 1}, column ${cell.col + 1}: empty`
+                      }
                     >
                       {cell.count > 0 && owner ? <div className="orb-stack">{createOrbMarkup(cell.count, owner.color)}</div> : null}
                     </motion.button>
@@ -472,7 +524,7 @@ export function LocalArena() {
                       <span className="player-dot" />
                       <div>
                         <strong>{player.name}</strong>
-                        <p>{countPlayerOrbs(board, player.id)} orbs on board</p>
+                        <p>{countPlayerOrbsOnBoard(displayBoard, player.id)} orbs on board</p>
                       </div>
                     </div>
                     <span className={`player-tag ${player.isEliminated ? "eliminated" : ""}`}>
@@ -488,43 +540,43 @@ export function LocalArena() {
 
       <AnimatePresence>
         {showWinnerModal && winner ? (
-        <motion.div className="modal-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <motion.div className="modal-backdrop" onClick={() => setShowWinnerModal(false)} />
-          <motion.div
-            className="modal-card victory-card border border-cyan-200/20 bg-slate-950/78"
-            initial={{ opacity: 0, y: 28, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.96 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="eyebrow">Victory Sequence</div>
-            <h2>{winner.name} Wins</h2>
-            <p className="modal-copy">{winner.name} controlled the final chain reaction and cleared the board pressure.</p>
-            <div className="victory-stats">
-              <div className="victory-chip">
-                <span>Winner</span>
-                <strong>{winner.name}</strong>
+          <motion.div className="modal-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="modal-backdrop" onClick={() => setShowWinnerModal(false)} />
+            <motion.div
+              className="modal-card victory-card border border-cyan-200/20 bg-slate-950/78"
+              initial={{ opacity: 0, y: 28, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.96 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="eyebrow">Victory Sequence</div>
+              <h2>{winner.name} Wins</h2>
+              <p className="modal-copy">{winner.name} controlled the final chain reaction and cleared the board pressure.</p>
+              <div className="victory-stats">
+                <div className="victory-chip">
+                  <span>Winner</span>
+                  <strong>{winner.name}</strong>
+                </div>
+                <div className="victory-chip">
+                  <span>Still Active</span>
+                  <strong>{activePlayers.length}</strong>
+                </div>
+                <div className="victory-chip">
+                  <span>Preset</span>
+                  <strong>{BOARD_PRESETS[presetId].label}</strong>
+                </div>
               </div>
-              <div className="victory-chip">
-                <span>Still Active</span>
-                <strong>{activePlayers.length}</strong>
+              <div className="modal-actions">
+                <motion.button whileHover={{ y: -2, scale: 1.01 }} whileTap={{ scale: 0.98 }} className="primary-link button-reset" type="button" onClick={startGame}>
+                  Rematch
+                </motion.button>
+                <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="ghost-link button-reset" type="button" onClick={() => setShowWinnerModal(false)}>
+                  Close
+                </motion.button>
               </div>
-              <div className="victory-chip">
-                <span>Preset</span>
-                <strong>{BOARD_PRESETS[presetId].label}</strong>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <motion.button whileHover={{ y: -2, scale: 1.01 }} whileTap={{ scale: 0.98 }} className="primary-link button-reset" type="button" onClick={startGame}>
-                Rematch
-              </motion.button>
-              <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="ghost-link button-reset" type="button" onClick={() => setShowWinnerModal(false)}>
-                Close
-              </motion.button>
-            </div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      ) : null}
+        ) : null}
       </AnimatePresence>
     </motion.main>
   );
