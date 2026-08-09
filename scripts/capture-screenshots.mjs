@@ -54,23 +54,22 @@ await playOpening(desktop, OPENING);
 await desktop.waitForTimeout(900);
 await desktop.screenshot({ path: `${OUT}/local-arena.png` });
 
-// 1x device scale deliberately: these land in git and are regenerated whenever
-// the UI moves, so every retina copy would be kept in history forever.
-// A four-seat match, to show that player identity carries on shape as well as
-// colour rather than taking that claim on trust.
-const shapes = await browser.newPage({ viewport: { width: 1440, height: 950 } });
-await shapes.goto(`${BASE}/local`, { waitUntil: "networkidle" });
-await shapes.getByLabel("Players").selectOption("4");
-await shapes.getByRole("button", { name: "Start Battle" }).first().click();
-await shapes.waitForTimeout(600);
-await playOpening(shapes, [
+// A four-seat match, showing four players sharing one board.
+const fourPlayer = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+await fourPlayer.goto(`${BASE}/local`, { waitUntil: "networkidle" });
+await fourPlayer.getByLabel("Players").selectOption("4");
+await fourPlayer.getByRole("button", { name: "Start Battle" }).first().click();
+await fourPlayer.waitForTimeout(600);
+await playOpening(fourPlayer, [
   [1, 1], [1, 4], [4, 1], [4, 4],
   [1, 2], [1, 3], [4, 2], [4, 3],
   [2, 2], [2, 3], [3, 2], [3, 3]
 ]);
-await shapes.waitForTimeout(800);
-await shapes.screenshot({ path: `${OUT}/player-shapes.png` });
+await fourPlayer.waitForTimeout(800);
+await fourPlayer.screenshot({ path: `${OUT}/local-four-player.png` });
 
+// 1x device scale deliberately: these land in git and are regenerated whenever
+// the UI moves, so every retina copy would be kept in history forever.
 const mobile = await browser.newPage({
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 1,

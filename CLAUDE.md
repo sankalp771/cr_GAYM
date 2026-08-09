@@ -156,7 +156,16 @@ mid-range Android.
 - Commit secrets
 - Disable or skip a failing test to make CI green
 - Change `/local` gameplay without a passing engine test in the same PR
-- Encode player identity in hue alone — it must survive colour blindness
+- Give orbs per-player shapes. Every orb is the same glossy sphere and **colour
+  alone** identifies the owner, as in the original game — this is a deliberate,
+  owner-made call. If colour-blind support comes up, it must be an opt-in
+  setting, never a change to the default look.
+- Add a bare, unprefixed class name to `app/globals.css`. It is one flat global
+  namespace shared by the landing page and the arena. A `.burst` rule added for
+  the arena's particles silently captured the landing page's `.preview-cell.burst`
+  modifier, stretched those cells to fill `.hero-card`, and shipped a broken home
+  page to production. Prefix new classes (`.orb-burst`, not `.burst`) and grep
+  before naming.
 - Start multiplayer work beyond the agreed transport (see below)
 
 ## Open decisions
