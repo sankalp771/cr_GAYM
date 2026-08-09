@@ -54,6 +54,20 @@ in the same pull request.
 See [CLAUDE.md](CLAUDE.md) for conventions and [docs/](docs/) for the product
 spec, architecture reference and roadmap.
 
-## Screenshot
+## Screenshots
 
-Not included yet — a capture of the local arena mid-cascade should go here.
+Local arena mid-match, 6×6 Classic:
+
+![The local arena during a two-player match](docs/images/local-arena.png)
+
+Board-first on a phone — the grid is reachable without scrolling:
+
+<img src="docs/images/local-mobile.png" alt="Local arena on a 390px-wide phone viewport" width="330">
+
+Regenerate with:
+
+```bash
+npm run build
+npx next start --port 3200 &
+node scripts/capture-screenshots.mjs
+```

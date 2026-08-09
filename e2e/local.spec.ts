@@ -58,4 +58,45 @@ test.describe("local arena", () => {
     );
     expect(overflows).toBe(false);
   });
+
+  test("the board is the first thing on screen once play starts", async ({ page }, testInfo) => {
+    await startBattle(page);
+
+    const board = page.locator(".board");
+    const box = await board.boundingBox();
+    expect(box).not.toBeNull();
+
+    // The board must be reachable without scrolling. It used to sit below the
+    // setup panel and a half-empty metrics block on a phone, and below the fold
+    // entirely on a 950px-tall desktop window.
+    const viewportHeight = page.viewportSize()?.height ?? 0;
+    expect(box!.y, `board pushed below the fold on ${testInfo.project.name}`).toBeLessThan(viewportHeight * 0.55);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewportHeight + 1);
+  });
+
+  test("turn countdown is shown and stat labels sit above their values", async ({ page }) => {
+    await startBattle(page);
+
+    await expect(page.getByText(/^\d+s left this turn$/)).toBeVisible();
+
+    // Regression: the label and value were both inline elements, so they rendered
+    // as "CurrentPlayer 1". Asserted geometrically — textContent is identical
+    // either way, so only the layout can tell the difference.
+    //
+    // Polled rather than measured once: the panel animates in, and a single
+    // reading can land mid-transition.
+    const statBox = page.locator(".stat-box").filter({ hasText: "Current" }).first();
+
+    await expect
+      .poll(
+        async () => {
+          const label = await statBox.locator(".stat-label").boundingBox();
+          const value = await statBox.locator("strong").boundingBox();
+          if (!label || !value) return null;
+          return value.y >= label.y + label.height - 1;
+        },
+        { message: "value should start below the label, not beside it" }
+      )
+      .toBe(true);
+  });
 });

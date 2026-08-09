@@ -54,9 +54,11 @@ await playOpening(desktop, OPENING);
 await desktop.waitForTimeout(900);
 await desktop.screenshot({ path: `${OUT}/local-arena.png` });
 
+// 1x device scale deliberately: these land in git and are regenerated whenever
+// the UI moves, so every retina copy would be kept in history forever.
 const mobile = await browser.newPage({
   viewport: { width: 390, height: 844 },
-  deviceScaleFactor: 2,
+  deviceScaleFactor: 1,
   isMobile: true,
   hasTouch: true
 });

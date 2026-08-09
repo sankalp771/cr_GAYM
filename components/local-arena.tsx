@@ -310,7 +310,8 @@ export function LocalArena() {
 
   return (
     <motion.main
-      className="mode-shell"
+      className="mode-shell arena-shell"
+      data-phase={phase}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
@@ -501,7 +502,13 @@ export function LocalArena() {
                   style={{ ["--turn-color" as string]: currentPlayer?.color ?? "#8ef9ff" }}
                 />
               </div>
-              <p className="info-copy">{statusText}</p>
+              {/*
+                The bar alone gives no sense of how long is actually left, and the
+                status line it replaced was already shown verbatim in the match feed.
+              */}
+              <p className="turn-countdown" aria-live="off">
+                {phase === "playing" ? `${Math.ceil(timerRemainingMs / 1000)}s left this turn` : "Timer idle"}
+              </p>
             </motion.article>
 
             <motion.article className="status-cluster" variants={staggerList} initial="initial" animate="animate">
