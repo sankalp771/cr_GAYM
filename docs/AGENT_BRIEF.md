@@ -2,6 +2,35 @@
 
 **Read this file completely before doing anything. Do not start writing feature code.**
 
+---
+
+## STATUS — Session 1 complete
+
+Tasks 1–7 are done. `CLAUDE.md` at the repo root is now the live reference;
+this brief is kept as the historical record of how the session was scoped.
+
+Corrections found while verifying Section 1, per ground rule 1 (reality wins):
+
+- **Section 1 versions were low.** Next resolves to **15.5.23** (not 15.2 —
+  moved onto the `backport` line to clear ~22 high-severity advisories),
+  TypeScript **5.9.3**, React **19.2.4**.
+- **Section 2 was right that lint was broken, but Task 1's fix was outdated.**
+  `next lint` is deprecated in Next 15.5 and removed in Next 16, and running it
+  with no ESLint installed *prompts interactively* — which would hang CI rather
+  than fail it. Replaced with the ESLint 9 CLI and flat config.
+- **Task 2's caveat did not apply.** `tsconfig.json` already had `strict: true`.
+- **Section 3 resolved to (b), accidental drift.** `pages/` held a single
+  unmodified `_document.tsx`, no `pages/api/`, no socket route — and git history
+  shows it was added *after* the App Router migration, so it was scaffold drift
+  rather than a preserved Socket.IO escape hatch. Directory removed.
+- **Section 4 answered: PartyKit.** Chosen over a separate socket server on cost
+  grounds — turn-based rooms hibernate while awaiting a move and bill nothing,
+  whereas an always-on instance costs the same idle and needs Redis to scale
+  past one node. Needs a Cloudflare account before multiplayer starts.
+- **Section 1 missed the biggest problem.** The cascade loop had no termination
+  condition and hung the browser on 93% of random 6x6 two-player games, always
+  at the winning move. See `CLAUDE.md` and the engine commit for the mechanism.
+
 This is a bootstrap brief for the first working session. Your job in this session is to make the repo *verifiable* — lint, types, tests, CI — and to extract the game engine into pure, testable functions. Feature work comes after, and only once CI is real.
 
 ---
