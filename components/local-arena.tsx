@@ -12,12 +12,14 @@ import {
   criticalMass,
   isLegalMove,
   PLAYER_COLORS,
+  PLAYER_SHAPES,
   pickAutoMove,
   TURN_SECONDS,
   type Board,
   type GameState,
   type GridConfig,
   type Player,
+  type PlayerShape,
   type PresetId
 } from "@/lib/engine";
 
@@ -42,6 +44,7 @@ function buildPlayers(playerNames: string[]): Player[] {
     id: `player-${index + 1}`,
     name: name.trim() || `Player ${index + 1}`,
     color: PLAYER_COLORS[index],
+    shape: PLAYER_SHAPES[index],
     hasEnteredPlay: false,
     isEliminated: false
   }));
@@ -72,11 +75,12 @@ function buildVictorySweep(board: Board, winnerId: string): Array<{ board: Board
   });
 }
 
-function createOrbMarkup(count: number, color: string) {
+function createOrbMarkup(count: number, color: string, shape: PlayerShape) {
   return Array.from({ length: count }, (_, index) => (
     <span
       key={`${color}-${count}-${index}`}
       className={`orb count-${Math.min(count, 4)}`}
+      data-shape={shape}
       style={{ ["--player-color" as string]: color }}
     />
   ));
@@ -376,7 +380,16 @@ export function LocalArena() {
               <div className="form-grid names-grid">
                 {playerNames.slice(0, playerCount).map((name, index) => (
                   <label key={`player-name-${index + 1}`} className="field-label">
-                    <span>Player {index + 1} Name</span>
+                    <span className="seat-label">
+                      {/* Shown before the match so a player knows which marker is
+                          theirs without having to infer it from colour. */}
+                      <span
+                        className="player-dot seat-swatch"
+                        data-shape={PLAYER_SHAPES[index]}
+                        style={{ ["--player-color" as string]: PLAYER_COLORS[index] }}
+                      />
+                      Player {index + 1} · {PLAYER_SHAPES[index]}
+                    </span>
                     <input
                       value={name}
                       disabled={phase === "playing"}
@@ -470,7 +483,9 @@ export function LocalArena() {
                           : `Row ${cell.row + 1}, column ${cell.col + 1}: empty`
                       }
                     >
-                      {cell.count > 0 && owner ? <div className="orb-stack">{createOrbMarkup(cell.count, owner.color)}</div> : null}
+                      {cell.count > 0 && owner ? (
+                        <div className="orb-stack">{createOrbMarkup(cell.count, owner.color, owner.shape)}</div>
+                      ) : null}
                     </motion.button>
                   );
                 })}
@@ -528,10 +543,14 @@ export function LocalArena() {
                     style={{ ["--player-color" as string]: player.color }}
                   >
                     <div className="player-line-main">
-                      <span className="player-dot" />
+                      <span className="player-dot" data-shape={player.shape} />
                       <div>
                         <strong>{player.name}</strong>
-                        <p>{countPlayerOrbsOnBoard(displayBoard, player.id)} orbs on board</p>
+                        {/* Naming the shape gives the colour a text fallback, which is
+                            what actually helps when the hues are indistinguishable. */}
+                        <p>
+                          {player.shape} · {countPlayerOrbsOnBoard(displayBoard, player.id)} orbs
+                        </p>
                       </div>
                     </div>
                     <span className={`player-tag ${player.isEliminated ? "eliminated" : ""}`}>

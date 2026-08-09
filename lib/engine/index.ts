@@ -20,6 +20,7 @@ export type { ApplyMoveOptions } from "./engine";
 export {
   BOARD_PRESETS,
   PLAYER_COLORS,
+  PLAYER_SHAPES,
   TURN_SECONDS,
   cloneBoard,
   countPlayerOrbs,
@@ -45,5 +46,6 @@ export type {
   Move,
   MoveResult,
   Player,
-  PlayerId
+  PlayerId,
+  PlayerShape
 } from "./types";

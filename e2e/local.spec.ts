@@ -50,6 +50,23 @@ test.describe("local arena", () => {
     await expect(cell(page, 3, 3)).toBeDisabled();
   });
 
+  test("gives every player a distinct shape, not just a distinct colour", async ({ page }) => {
+    await page.goto("/local");
+    await page.getByLabel("Players").selectOption("4");
+    await page.getByRole("button", { name: "Start Battle" }).first().click();
+    await expect(page.getByRole("heading", { name: /controls the next move/ })).toBeVisible();
+
+    // Identity must not rest on hue alone — seats 1 and 7 are pink and green,
+    // which a red-green colour blind player cannot separate.
+    const shapes = await page.locator(".player-line .player-dot").evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-shape"))
+    );
+
+    expect(shapes).toHaveLength(4);
+    expect(shapes.every(Boolean)).toBe(true);
+    expect(new Set(shapes).size, `expected 4 distinct shapes, got ${shapes.join(", ")}`).toBe(4);
+  });
+
   test("board stays inside the viewport on a phone", async ({ page }) => {
     await startBattle(page);
 

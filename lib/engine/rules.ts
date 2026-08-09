@@ -1,4 +1,4 @@
-import type { Board, Cell, GridConfig, PlayerId } from "./types";
+import type { Board, Cell, GridConfig, PlayerId, PlayerShape } from "./types";
 
 /**
  * Board size presets. The product spec is explicit that the UI offers these five
@@ -27,6 +27,29 @@ export const PLAYER_COLORS = [
   "#79ff6b",
   "#ff74f1"
 ] as const;
+
+/**
+ * A distinct silhouette per seat, paired with the colour above.
+ *
+ * Player identity must never rest on hue alone: seats 1 and 7 are pink and
+ * green, which a red-green colour blind player cannot reliably separate, and
+ * the whole game is "whose orbs are those". The shape is the redundant channel,
+ * and it survives colour blindness, a dim phone screen and a low-quality
+ * screen recording alike.
+ *
+ * Ordered so the most distinguishable silhouettes come first — most matches are
+ * two-player, so those two should be the easiest pair to tell apart.
+ */
+export const PLAYER_SHAPES: readonly PlayerShape[] = [
+  "circle",
+  "diamond",
+  "triangle",
+  "square",
+  "hexagon",
+  "star",
+  "pentagon",
+  "cross"
+];
 
 export function isInsideBoard(row: number, col: number, config: GridConfig) {
   return row >= 0 && col >= 0 && row < config.rows && col < config.cols;

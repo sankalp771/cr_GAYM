@@ -60,6 +60,11 @@ Local arena mid-match, 6×6 Classic:
 
 ![The local arena during a two-player match](docs/images/local-arena.png)
 
+Player identity carries on shape as well as colour, so it survives colour
+blindness:
+
+![A four-player match where each player has a distinct silhouette](docs/images/player-shapes.png)
+
 Board-first on a phone — the grid is reachable without scrolling:
 
 <img src="docs/images/local-mobile.png" alt="Local arena on a 390px-wide phone viewport" width="330">

@@ -456,6 +456,36 @@ h2 {
   box-shadow: 0 0 18px color-mix(in srgb, var(--turn-color, #8ef9ff) 48%, transparent);
 }
 
+.seat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  text-transform: capitalize;
+}
+
+/*
+ * Seat labels wrap to two lines at some widths ("Player 2 ·" / "Diamond"),
+ * which pushed those inputs down relative to their neighbours. Stretch each
+ * label to the row height and pin the input to the bottom so the inputs line up
+ * regardless of how the text breaks.
+ */
+.names-grid .field-label {
+  height: 100%;
+}
+
+.names-grid .field-label input {
+  margin-top: auto;
+}
+
+.seat-swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.player-line-main p {
+  text-transform: capitalize;
+}
+
 .turn-countdown {
   margin: 0.6rem 0 0;
   color: var(--muted);
@@ -491,11 +521,14 @@ h2 {
 }
 
 .player-dot {
-  width: 1rem;
-  height: 1rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
   border-radius: 50%;
   background: var(--player-color);
-  box-shadow: 0 0 16px var(--player-color);
+  /* Matches the orb treatment so the lineup marker and the board pieces read as
+     the same thing — that association is the whole point of the shape. */
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--player-color) 75%, transparent));
 }
 
 .player-tag {
@@ -705,10 +738,69 @@ h2 {
   border-radius: 50%;
   background:
     radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), var(--player-color) 30%, color-mix(in srgb, var(--player-color) 42%, black) 78%);
-  box-shadow:
-    0 0 24px color-mix(in srgb, var(--player-color) 80%, transparent),
-    0 0 42px color-mix(in srgb, var(--player-color) 42%, transparent);
+  /*
+   * drop-shadow rather than box-shadow: box-shadow is drawn from the border box
+   * and ignores clip-path, so a clipped orb would keep a round halo and lose the
+   * silhouette entirely. drop-shadow is applied after clipping and follows the
+   * real shape. One shadow, not two — a 14x14 board can hold several hundred
+   * orbs and filters are the expensive part on a mid-range phone.
+   */
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--player-color) 72%, transparent));
   animation: orb-materialize 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Player identity carries on a second, non-colour channel. See PLAYER_SHAPES in
+ * lib/engine/rules.ts for why: seats 1 and 7 are pink and green, which a
+ * red-green colour blind player cannot separate, and the entire game is reading
+ * whose orbs are whose.
+ */
+.orb[data-shape="diamond"],
+.player-dot[data-shape="diamond"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+.orb[data-shape="triangle"],
+.player-dot[data-shape="triangle"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 2%, 98% 94%, 2% 94%);
+}
+
+.orb[data-shape="square"],
+.player-dot[data-shape="square"] {
+  border-radius: 16%;
+}
+
+.orb[data-shape="hexagon"],
+.player-dot[data-shape="hexagon"] {
+  border-radius: 6%;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
+}
+
+.orb[data-shape="star"],
+.player-dot[data-shape="star"] {
+  border-radius: 0;
+  clip-path: polygon(
+    50% 0%, 61% 34%, 98% 34%, 68% 56%,
+    79% 91%, 50% 69%, 21% 91%, 32% 56%,
+    2% 34%, 39% 34%
+  );
+}
+
+.orb[data-shape="pentagon"],
+.player-dot[data-shape="pentagon"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+.orb[data-shape="cross"],
+.player-dot[data-shape="cross"] {
+  border-radius: 0;
+  clip-path: polygon(
+    34% 0%, 66% 0%, 66% 34%, 100% 34%, 100% 66%, 66% 66%,
+    66% 100%, 34% 100%, 34% 66%, 0% 66%, 0% 34%, 34% 34%
+  );
 }
 
 .cell.flash .orb {
@@ -1030,5 +1122,30 @@ h2 {
 
   .victory-stats {
     grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * Respect a reduced-motion preference.
+ *
+ * This game is built out of pulsing cells, materialising orbs, energy rings and
+ * a board that breathes while a reaction resolves — which is the appeal, and
+ * also exactly the kind of thing that triggers motion sickness or migraine. The
+ * cascade still steps through its frames so the game stays readable and
+ * playable; only the decorative motion stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ambient,
+  .background-grid {
+    animation: none !important;
   }
 }
