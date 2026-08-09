@@ -116,6 +116,31 @@ Be aware most of `app/globals.css` (~900 lines) is hand-written CSS driven by
 `--player-color` custom property on the element. Follow the existing pattern
 rather than converting to utilities piecemeal.
 
+## Sound, haptics and motion
+
+Audio is **synthesised**, not sampled — `lib/sound.ts` builds every effect from
+oscillators and a noise buffer. No audio files means nothing to license, host or
+download before the first move, and it lets an explosion be pitched by how deep
+into a cascade it is, which a fixed sample cannot do. Do not add sample files
+without a reason that this cannot cover.
+
+Two rules that are easy to get wrong:
+
+- An `AudioContext` **must** be created inside a user gesture. One created any
+  other way stays suspended forever and every sound silently does nothing. It is
+  primed on Start Battle and on unmuting.
+- The mute preference lives in `localStorage`, so it must not be read during
+  render — that is a hydration mismatch. Read it in an effect after mount.
+
+`prefers-reduced-motion: reduce` is respected globally. The cascade still steps
+through its frames, because that is the game rather than decoration; only the
+ambient and decorative motion stops.
+
+Explosion particles animate with **transform and opacity only** — both
+composited, neither triggering layout or paint. A 14x14 board can put a lot of
+them on screen at once, and the brief is explicit about frame rate on a
+mid-range Android.
+
 ## Definition of done for a component
 
 - Loading, empty and error states all handled

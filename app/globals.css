@@ -456,6 +456,32 @@ h2 {
   box-shadow: 0 0 18px color-mix(in srgb, var(--turn-color, #8ef9ff) 48%, transparent);
 }
 
+/*
+ * The arena header holds three controls, and the shared auto-fit grid gives each
+ * a 180px minimum — more than the header's narrow second column can fit on one
+ * row, so they wrapped and pushed the board down the page. Flex instead, so they
+ * size to their content and stay on one line.
+ */
+.local-header-card .header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.local-header-card .header-actions > * {
+  min-height: 2.9rem;
+  padding: 0.6rem 1rem;
+}
+
+.sound-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
 .seat-label {
   display: flex;
   align-items: center;
@@ -720,6 +746,91 @@ h2 {
   box-shadow: 0 0 20px color-mix(in srgb, var(--turn-color, #8ef9ff) 18%, transparent);
   opacity: 0;
   animation: energy-ring 760ms ease-out;
+}
+
+/*
+ * Explosion particles.
+ *
+ * Four per exploding cell, one per neighbour, so the burst reads as orbs being
+ * thrown outward rather than as generic sparkle. Animated purely with transform
+ * and opacity — both composited, neither triggering layout or paint — because a
+ * 14x14 board can have a lot of these on screen at once and the brief is
+ * explicit about not tanking frame rate on a mid-range Android.
+ */
+/*
+ * Cells clip their contents so orb glow and the energy ring stay inside the
+ * tile. Particles are the one thing that must escape — they travel toward the
+ * neighbours the orbs are actually going to — so the clip is lifted for the one
+ * step a cell is bursting, and it is raised above its neighbours while it does.
+ */
+.cell.bursting {
+  overflow: visible;
+  z-index: 2;
+}
+
+.burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.burst-particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22%;
+  height: 22%;
+  margin: -11% 0 0 -11%;
+  border-radius: 50%;
+  /*
+   * An exploding cell is emptied, so it has no owner and no --player-color of
+   * its own. Fall through to the board's --turn-color, which is the player whose
+   * reaction this is — otherwise every burst would be default cyan.
+   */
+  background: var(--player-color, var(--turn-color, #8ef9ff));
+  opacity: 0;
+  box-shadow: 0 0 10px var(--player-color, var(--turn-color, #8ef9ff));
+  will-change: transform, opacity;
+  animation: burst-fly 400ms cubic-bezier(0.15, 0.75, 0.3, 1) forwards;
+}
+
+.burst-particle[data-direction="0"] {
+  --burst-x: 0;
+  --burst-y: -150%;
+}
+
+.burst-particle[data-direction="1"] {
+  --burst-x: 150%;
+  --burst-y: 0;
+}
+
+.burst-particle[data-direction="2"] {
+  --burst-x: 0;
+  --burst-y: 150%;
+}
+
+.burst-particle[data-direction="3"] {
+  --burst-x: -150%;
+  --burst-y: 0;
+}
+
+/*
+ * Stays large and bright for most of its flight, then drops away quickly. An
+ * earlier version shrank to 0.2 scale almost immediately, which was technically
+ * animating but effectively invisible — a 4px dot at 75% opacity.
+ */
+@keyframes burst-fly {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(0.7);
+  }
+  60% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--burst-x, 0), var(--burst-y, 0), 0) scale(0.45);
+  }
 }
 
 .orb-stack {

@@ -42,6 +42,44 @@ test.describe("local arena", () => {
     await expect(cell(page, 1, 0)).toHaveAccessibleName(/1 orb owned by Player 1$/);
   });
 
+  test("emits explosion particles during a cascade", async ({ page }) => {
+    await startBattle(page);
+
+    // A burst is on screen for barely a hundred milliseconds, so polling for it
+    // would be a coin flip. Record via MutationObserver instead: it cannot miss
+    // the window however the frames happen to land.
+    await page.evaluate(() => {
+      const win = window as unknown as { __sawBurst?: boolean };
+      win.__sawBurst = false;
+      new MutationObserver(() => {
+        if (document.querySelector(".burst-particle")) win.__sawBurst = true;
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
+    await cell(page, 0, 0).click();
+    await cell(page, 5, 5).click();
+    await cell(page, 0, 0).click(); // corner reaches critical mass
+
+    await expect(cell(page, 0, 1)).toHaveAccessibleName(/1 orb owned by Player 1$/);
+
+    const sawBurst = await page.evaluate(() => (window as unknown as { __sawBurst?: boolean }).__sawBurst);
+    expect(sawBurst, "no explosion particles were rendered during the cascade").toBe(true);
+  });
+
+  test("mute toggle flips its pressed state and persists", async ({ page }) => {
+    await page.goto("/local");
+
+    const toggle = page.getByRole("button", { name: /sound effects$/ });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    // The preference is stored, so a reload keeps the choice.
+    await page.reload();
+    await expect(page.getByRole("button", { name: /sound effects$/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
   test("refuses to play onto an opponent's cell", async ({ page }) => {
     await startBattle(page);
 

@@ -22,15 +22,51 @@ import {
   type PlayerShape,
   type PresetId
 } from "@/lib/engine";
+import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
 
 type GamePhase = "setup" | "playing" | "finished";
 
 /** Cells lit up by the step currently on screen, keyed "row,col". */
 type FlashSet = ReadonlySet<string>;
 
-const FRAME_MS = 140;
+type AnimationStep = {
+  board: Board;
+  flash: FlashSet;
+  /** Cells that exploded on this step — these get the particle burst. */
+  burst: FlashSet;
+  exploded: boolean;
+};
+
+/** Particles emitted per exploding cell. Four directions, matching the four neighbours. */
+const BURST_PARTICLES = [0, 1, 2, 3];
+
 const VICTORY_FRAME_MS = 100;
 const EMPTY_FLASH: FlashSet = new Set<string>();
+
+/**
+ * Cascade pacing.
+ *
+ * A fixed step made short reactions feel sluggish and long ones interminable —
+ * the whole cascade is dead time the player cannot act during. Instead the
+ * reaction gets a rough time budget and the step shrinks as it gets longer,
+ * within bounds that keep it readable.
+ */
+const CASCADE_BUDGET_MS = 2200;
+const MAX_STEP_MS = 165;
+const MIN_STEP_MS = 45;
+
+function stepDurations(count: number): number[] {
+  if (count <= 0) return [];
+
+  const flat = Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, CASCADE_BUDGET_MS / count));
+
+  return Array.from({ length: count }, (_, index) => {
+    // Ease out: the first steps linger so the chain reads, then it accelerates
+    // away, which is also how a chain reaction actually feels.
+    const progress = count === 1 ? 0 : index / (count - 1);
+    return Math.max(MIN_STEP_MS, flat * (1.25 - 0.5 * progress));
+  });
+}
 
 const cellKey = (row: number, col: number) => `${row},${col}`;
 
@@ -62,7 +98,7 @@ function countPlayerOrbsOnBoard(board: Board, playerId: string) {
  * winner's colour, one at a time. This is presentation, not a rule, which is why
  * it lives here rather than in the engine.
  */
-function buildVictorySweep(board: Board, winnerId: string): Array<{ board: Board; flash: FlashSet }> {
+function buildVictorySweep(board: Board, winnerId: string): AnimationStep[] {
   const working = board.map((row) => row.map((cell) => ({ ...cell })));
   const occupied = working.flat().filter((cell) => cell.count > 0);
 
@@ -70,7 +106,9 @@ function buildVictorySweep(board: Board, winnerId: string): Array<{ board: Board
     working[cell.row][cell.col].ownerId = winnerId;
     return {
       board: working.map((row) => row.map((entry) => ({ ...entry }))),
-      flash: new Set([cellKey(cell.row, cell.col)])
+      flash: new Set([cellKey(cell.row, cell.col)]),
+      burst: EMPTY_FLASH,
+      exploded: false
     };
   });
 }
@@ -112,6 +150,7 @@ export function LocalArena() {
   const [game, setGame] = useState<GameState | null>(null);
   const [displayBoard, setDisplayBoard] = useState<Board>(() => createEmptyBoard(configForPreset("classic")));
   const [flashCells, setFlashCells] = useState<FlashSet>(EMPTY_FLASH);
+  const [burstCells, setBurstCells] = useState<FlashSet>(EMPTY_FLASH);
   const [frameTick, setFrameTick] = useState(0);
 
   const [phase, setPhase] = useState<GamePhase>("setup");
@@ -119,6 +158,26 @@ export function LocalArena() {
   const [timerRemainingMs, setTimerRemainingMs] = useState(TURN_SECONDS * 1000);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  // Starts false on both server and client so the markup matches, then syncs to
+  // the stored preference after mount. Reading localStorage during render would
+  // be a hydration mismatch.
+  const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    setIsMuted(loadMutePreference());
+  }, []);
+
+  function toggleMute() {
+    const next = !isMuted;
+    setIsMuted(next);
+    setMuted(next);
+    // Unmuting is a user gesture, which is the only moment a browser will let
+    // an AudioContext start.
+    if (!next) {
+      primeAudio();
+      playSound("place");
+    }
+  }
 
   const turnStartedAtRef = useRef<number>(0);
   const intervalRef = useRef<number | null>(null);
@@ -169,12 +228,22 @@ export function LocalArena() {
   }, []);
 
   const playFrames = useCallback(
-    async (steps: Array<{ board: Board; flash: FlashSet }>, delayMs: number) => {
-      for (const step of steps) {
+    async (steps: AnimationStep[], durations: number[]) => {
+      for (const [index, step] of steps.entries()) {
         setDisplayBoard(step.board);
         setFlashCells(step.flash);
+        setBurstCells(step.burst);
         setFrameTick((tick) => tick + 1);
-        await waitForFrame(delayMs);
+
+        if (step.exploded) {
+          const depth = steps.length <= 1 ? 0 : index / (steps.length - 1);
+          playSound("explode", depth);
+          // One pulse at the head of the chain, not one per step — a long
+          // cascade would otherwise buzz continuously.
+          if (index === 0 || (index === 1 && !steps[0].exploded)) vibrate(18);
+        }
+
+        await waitForFrame(durations[index] ?? MIN_STEP_MS);
       }
     },
     [waitForFrame]
@@ -197,20 +266,25 @@ export function LocalArena() {
           : `${actingPlayer.name} triggered a chain reaction.`
       );
 
-      await playFrames(
-        result.frames.map((frame) => ({
-          board: frame.board,
-          flash: new Set([
-            ...frame.exploded.map((cell) => cellKey(cell.row, cell.col)),
-            ...frame.received.map((cell) => cellKey(cell.row, cell.col))
-          ])
-        })),
-        FRAME_MS
-      );
+      playSound("place");
+      vibrate(8);
+
+      const steps: AnimationStep[] = result.frames.map((frame) => ({
+        board: frame.board,
+        flash: new Set([
+          ...frame.exploded.map((cell) => cellKey(cell.row, cell.col)),
+          ...frame.received.map((cell) => cellKey(cell.row, cell.col))
+        ]),
+        burst: new Set(frame.exploded.map((cell) => cellKey(cell.row, cell.col))),
+        exploded: frame.exploded.length > 0
+      }));
+
+      await playFrames(steps, stepDurations(steps.length));
 
       setGame(result.state);
       setDisplayBoard(result.state.board);
       setFlashCells(EMPTY_FLASH);
+    setBurstCells(EMPTY_FLASH);
 
       if (result.state.status === "finished" && result.state.winnerId) {
         const championName =
@@ -218,7 +292,15 @@ export function LocalArena() {
         setStatusText(`${championName} is consuming the board.`);
 
         const sweep = buildVictorySweep(result.state.board, result.state.winnerId);
-        if (sweep.length > 0) await playFrames(sweep, VICTORY_FRAME_MS);
+        if (sweep.length > 0) {
+          await playFrames(
+            sweep,
+            sweep.map(() => VICTORY_FRAME_MS)
+          );
+        }
+
+        playSound("victory");
+        vibrate([30, 60, 30]);
 
         setPhase("finished");
         setShowWinnerModal(true);
@@ -280,12 +362,16 @@ export function LocalArena() {
 
   function startGame() {
     clearPendingTimeouts();
+    // Started from a click, so this is the one reliable chance to open the
+    // AudioContext; browsers keep one created outside a gesture suspended.
+    primeAudio();
     const nextConfig = configForPreset(presetId);
     const freshGame = createInitialState(nextConfig, buildPlayers(playerNames.slice(0, playerCount)));
 
     setGame(freshGame);
     setDisplayBoard(freshGame.board);
     setFlashCells(EMPTY_FLASH);
+    setBurstCells(EMPTY_FLASH);
     setPhase("playing");
     setShowWinnerModal(false);
     setIsResolving(false);
@@ -298,6 +384,7 @@ export function LocalArena() {
     setGame(null);
     setDisplayBoard(createEmptyBoard(configForPreset(presetId)));
     setFlashCells(EMPTY_FLASH);
+    setBurstCells(EMPTY_FLASH);
     setPhase("setup");
     setShowWinnerModal(false);
     setIsResolving(false);
@@ -338,6 +425,16 @@ export function LocalArena() {
 
         <motion.div className="header-actions" variants={staggerList} initial="initial" animate="animate">
           <Link href="/" className="ghost-link">Back Home</Link>
+          <button
+            className="ghost-link button-reset sound-toggle"
+            onClick={toggleMute}
+            type="button"
+            aria-pressed={isMuted}
+            aria-label={isMuted ? "Unmute sound effects" : "Mute sound effects"}
+          >
+            <span aria-hidden="true">{isMuted ? "🔇" : "🔊"}</span>
+            <span>{isMuted ? "Muted" : "Sound"}</span>
+          </button>
           <button className="primary-link button-reset" onClick={startGame} type="button">Start Battle</button>
         </motion.div>
       </motion.section>
@@ -464,13 +561,14 @@ export function LocalArena() {
                       : false;
                   const critical = cell.count > 0 && cell.count === criticalMass(cell.row, cell.col, boardConfig) - 1;
                   const isFlashing = flashCells.has(cellKey(cell.row, cell.col));
+                  const isBursting = burstCells.has(cellKey(cell.row, cell.col));
 
                   return (
                     <motion.button
                       // The flash key changes only for cells lit by the current
                       // step, remounting just those so the glow animation replays.
                       key={`${cell.row}-${cell.col}-${isFlashing ? frameTick : 0}`}
-                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${isFlashing ? "flash energized" : ""}`}
+                      className={`cell ${playable ? "playable" : "blocked"} ${critical && owner ? "critical" : ""} ${isFlashing ? "flash energized" : ""} ${isBursting ? "bursting" : ""}`}
                       whileHover={playable ? { scale: 1.03 } : undefined}
                       whileTap={playable ? { scale: 0.97 } : undefined}
                       style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
@@ -483,6 +581,13 @@ export function LocalArena() {
                           : `Row ${cell.row + 1}, column ${cell.col + 1}: empty`
                       }
                     >
+                      {isBursting ? (
+                        <span className="burst" aria-hidden="true">
+                          {BURST_PARTICLES.map((direction) => (
+                            <span key={direction} className="burst-particle" data-direction={direction} />
+                          ))}
+                        </span>
+                      ) : null}
                       {cell.count > 0 && owner ? (
                         <div className="orb-stack">{createOrbMarkup(cell.count, owner.color, owner.shape)}</div>
                       ) : null}
