@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   applyMove,
   BOARD_PRESETS,
+  chooseGreedyMove,
   createEmptyBoard,
   createInitialState,
   criticalMass,
@@ -23,6 +24,27 @@ import {
 import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
 
 type GamePhase = "setup" | "playing" | "finished";
+
+/** Who is behind a seat. Chosen per seat in Battle Setup, frozen when the match starts. */
+type SeatKind = "human" | "computer";
+
+/** Where a move came from. Only the status line cares — all three take the same path. */
+type MoveSource = "human" | "timeout" | "computer";
+
+/**
+ * Beat between a computer seat's turn starting and its move landing.
+ *
+ * Without it the bot's move and the resulting cascade arrive in the same frame
+ * as the human's, and the board reads as if it glitched rather than as if
+ * somebody replied. Long enough to register, short enough not to drag with
+ * seven bots playing in sequence.
+ */
+const AI_MOVE_DELAY_MS = 600;
+
+/** Seat 1 is the human; every other seat defaults to a computer opponent. */
+function defaultSeatKinds(count: number, previous: SeatKind[] = []): SeatKind[] {
+  return Array.from({ length: count }, (_, index) => previous[index] ?? (index === 0 ? "human" : "computer"));
+}
 
 /** Cells lit up by the step currently on screen, keyed "row,col". */
 type FlashSet = ReadonlySet<string>;
@@ -139,6 +161,11 @@ export function LocalArena() {
   const [presetId, setPresetId] = useState<PresetId>("classic");
   const [playerCount, setPlayerCount] = useState(2);
   const [playerNames, setPlayerNames] = useState<string[]>(["Player 1", "Player 2"]);
+  const [seatKinds, setSeatKinds] = useState<SeatKind[]>(() => defaultSeatKinds(2));
+
+  // Snapshot of the seat choices taken when the match started, so editing the
+  // setup panel afterwards cannot change who is driving a seat mid-match.
+  const [computerSeatIds, setComputerSeatIds] = useState<ReadonlySet<string>>(() => new Set<string>());
 
   // The authoritative match state lives in the engine. Everything else in this
   // component is presentation: which frame is on screen, what the status line
@@ -198,6 +225,7 @@ export function LocalArena() {
     setPlayerNames((previous) =>
       Array.from({ length: playerCount }, (_, index) => previous[index] ?? `Player ${index + 1}`)
     );
+    setSeatKinds((previous) => defaultSeatKinds(playerCount, previous));
   }, [playerCount]);
 
   function clearPendingTimeouts() {
@@ -246,7 +274,7 @@ export function LocalArena() {
   );
 
   const runMove = useCallback(
-    async (row: number, col: number, isAutoMove: boolean) => {
+    async (row: number, col: number, source: MoveSource) => {
       if (!game || game.status !== "playing" || isResolving) return;
 
       const actingPlayer = game.players[game.currentPlayerIndex];
@@ -257,9 +285,11 @@ export function LocalArena() {
 
       setIsResolving(true);
       setStatusText(
-        isAutoMove
+        source === "timeout"
           ? `${actingPlayer.name} ran out of time, so the arena auto-played the spread tile by tile.`
-          : `${actingPlayer.name} triggered a chain reaction.`
+          : source === "computer"
+            ? `${actingPlayer.name} calculated a strike and triggered a chain reaction.`
+            : `${actingPlayer.name} triggered a chain reaction.`
       );
 
       playSound("place");
@@ -308,9 +338,11 @@ export function LocalArena() {
 
       setIsResolving(false);
       setStatusText(
-        isAutoMove
+        source === "timeout"
           ? `${actingPlayer.name} ran out of time, so the arena auto-played a valid move.`
-          : `${actingPlayer.name} made a move and shifted the board pressure.`
+          : source === "computer"
+            ? `${actingPlayer.name} answered and shifted the board pressure.`
+            : `${actingPlayer.name} made a move and shifted the board pressure.`
       );
     },
     [game, isResolving, playFrames]
@@ -326,8 +358,64 @@ export function LocalArena() {
     const move = pickAutoMove(game, Math.random);
     if (!move) return;
     autoMoveFiredRef.current = true;
-    void runMove(move.row, move.col, true);
+    void runMove(move.row, move.col, "timeout");
   };
+
+  const isComputerSeat = useCallback(
+    (playerId: string) => computerSeatIds.has(playerId),
+    [computerSeatIds]
+  );
+
+  /**
+   * The turn a computer seat has already been dispatched for.
+   *
+   * `moveCount` is the turn's identity: it is monotonic within a match and
+   * changes on every move, so comparing against it is a fired-once latch. The
+   * effect below re-runs on any state change — a re-render, the cascade
+   * finishing — and without the latch a bot would be handed a second turn.
+   */
+  const aiDispatchedForMoveRef = useRef(-1);
+
+  // Read through a ref for the same reason the turn timer does: the timeout is
+  // scheduled once and fires later, so closing over `game` directly would let it
+  // compute a move from the board as it looked when the turn started.
+  const aiMoveRef = useRef<() => void>(() => {});
+  aiMoveRef.current = () => {
+    if (!game || game.status !== "playing" || isResolving) return;
+
+    const actingPlayer = game.players[game.currentPlayerIndex];
+    if (!actingPlayer || !isComputerSeat(actingPlayer.id)) return;
+    if (aiDispatchedForMoveRef.current === game.moveCount) return;
+
+    const move = chooseGreedyMove(game, Math.random);
+    if (!move) return;
+
+    aiDispatchedForMoveRef.current = game.moveCount;
+    // Deliberately the same entry point a click uses — one move path, one
+    // animation path, one set of rules.
+    void runMove(move.row, move.col, "computer");
+  };
+
+  useEffect(() => {
+    if (phase !== "playing" || isResolving) return;
+    if (!game || game.status !== "playing") return;
+
+    const actingPlayer = game.players[game.currentPlayerIndex];
+    if (!actingPlayer || !isComputerSeat(actingPlayer.id)) return;
+    if (aiDispatchedForMoveRef.current === game.moveCount) return;
+
+    const timeoutId = window.setTimeout(() => {
+      timeoutRef.current = timeoutRef.current.filter((entry) => entry !== timeoutId);
+      aiMoveRef.current();
+    }, AI_MOVE_DELAY_MS);
+
+    timeoutRef.current.push(timeoutId);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      timeoutRef.current = timeoutRef.current.filter((entry) => entry !== timeoutId);
+    };
+  }, [phase, isResolving, game, isComputerSeat]);
 
   useEffect(() => {
     if (phase !== "playing" || isResolving) {
@@ -363,7 +451,12 @@ export function LocalArena() {
     primeAudio();
     const nextConfig = configForPreset(presetId);
     const freshGame = createInitialState(nextConfig, buildPlayers(playerNames.slice(0, playerCount)));
+    const kinds = defaultSeatKinds(playerCount, seatKinds);
 
+    aiDispatchedForMoveRef.current = -1;
+    setComputerSeatIds(
+      new Set(freshGame.players.filter((_, index) => kinds[index] === "computer").map((player) => player.id))
+    );
     setGame(freshGame);
     setDisplayBoard(freshGame.board);
     setFlashCells(EMPTY_FLASH);
@@ -377,6 +470,8 @@ export function LocalArena() {
 
   function resetSetup() {
     clearPendingTimeouts();
+    aiDispatchedForMoveRef.current = -1;
+    setComputerSeatIds(new Set<string>());
     setGame(null);
     setDisplayBoard(createEmptyBoard(configForPreset(presetId)));
     setFlashCells(EMPTY_FLASH);
@@ -472,23 +567,46 @@ export function LocalArena() {
 
               <div className="form-grid names-grid">
                 {playerNames.slice(0, playerCount).map((name, index) => (
-                  <label key={`player-name-${index + 1}`} className="field-label">
+                  // A plain element rather than a label: the seat owns two
+                  // controls now, and a label wrapping both would name only the
+                  // first of them. Each control carries its own aria-label.
+                  <div key={`player-seat-${index + 1}`} className="field-label ai-seat">
                     <span className="seat-label">
                       {/* The seat's colour, shown before the match starts. */}
                       <span
                         className="player-dot seat-swatch"
                         style={{ ["--player-color" as string]: PLAYER_COLORS[index] }}
                       />
-                      Player {index + 1} Name
+                      Player {index + 1}
                     </span>
-                    <input
-                      value={name}
-                      disabled={phase === "playing"}
-                      onChange={(event) =>
-                        setPlayerNames((previous) => previous.map((entry, entryIndex) => (entryIndex === index ? event.target.value : entry)))
-                      }
-                    />
-                  </label>
+                    <div className="ai-seat-controls">
+                      <input
+                        className="ai-seat-name"
+                        aria-label={`Player ${index + 1} name`}
+                        value={name}
+                        disabled={phase === "playing"}
+                        onChange={(event) =>
+                          setPlayerNames((previous) => previous.map((entry, entryIndex) => (entryIndex === index ? event.target.value : entry)))
+                        }
+                      />
+                      <select
+                        className="ai-seat-select"
+                        aria-label={`Player ${index + 1} control`}
+                        value={seatKinds[index] ?? "computer"}
+                        disabled={phase === "playing"}
+                        onChange={(event) =>
+                          setSeatKinds((previous) =>
+                            previous.map((entry, entryIndex) =>
+                              entryIndex === index ? (event.target.value as SeatKind) : entry
+                            )
+                          )
+                        }
+                      >
+                        <option value="human">Human</option>
+                        <option value="computer">Computer</option>
+                      </select>
+                    </div>
+                  </div>
                 ))}
               </div>
 
@@ -567,7 +685,7 @@ export function LocalArena() {
                       whileTap={playable ? { scale: 0.97 } : undefined}
                       style={owner ? ({ ["--player-color" as string]: owner.color } as CSSProperties) : undefined}
                       disabled={!playable}
-                      onClick={() => void runMove(cell.row, cell.col, false)}
+                      onClick={() => void runMove(cell.row, cell.col, "human")}
                       type="button"
                       aria-label={
                         owner
@@ -644,7 +762,12 @@ export function LocalArena() {
                     <div className="player-line-main">
                       <span className="player-dot" />
                       <div>
-                        <strong>{player.name}</strong>
+                        <strong>
+                          {player.name}
+                          {isComputerSeat(player.id) ? (
+                            <span className="ai-badge">CPU</span>
+                          ) : null}
+                        </strong>
                         <p>{countPlayerOrbsOnBoard(displayBoard, player.id)} orbs on board</p>
                       </div>
                     </div>

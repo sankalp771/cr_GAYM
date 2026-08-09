@@ -105,6 +105,27 @@ playout test in `lib/engine/__tests__/engine.test.ts` is the one that must stay
 green — it plays 200 games to completion across four board and player
 combinations.
 
+## The computer opponent
+
+`lib/engine/ai.ts` holds `chooseGreedyMove(state, random)`. It is one ply: score
+every legal move by the position it produces and take the best, breaking ties
+with the injected `random`. It is **not** a search — no minimax, no alpha-beta.
+Depth search is a separate piece of work; if it lands, it goes beside this
+function rather than inside it.
+
+Seats are chosen per seat in Battle Setup, defaulting to one human and computers
+for the rest, so a match can be human + 1 through human + 7 bots. The seat kinds
+are snapshotted when the match starts, so editing the panel mid-match cannot
+change who is driving a seat.
+
+Two things in `components/local-arena.tsx` are load-bearing:
+
+- A bot's move goes through the same `runMove` a click does. There is one move
+  path and one animation path, and it must stay that way.
+- The bot is dispatched from an effect that re-runs on every state change, so it
+  reaches its handler through a ref (stale-closure trap, same as the turn timer)
+  and latches on `moveCount` so it cannot play twice for one turn.
+
 ## Tailwind v4
 
 v4 is CSS-first. There is **no `tailwind.config.js`** and adding one is the wrong
