@@ -26,17 +26,10 @@ export type Cell = {
 
 export type Board = Cell[][];
 
-/**
- * The redundant, non-colour channel for player identity. See `PLAYER_SHAPES`.
- */
-export type PlayerShape = "circle" | "diamond" | "triangle" | "square" | "hexagon" | "star" | "pentagon" | "cross";
-
 export type Player = {
   id: PlayerId;
   name: string;
   color: string;
-  /** Paired with `color` so identity never depends on hue alone. */
-  shape: PlayerShape;
   /**
    * Set once the player has actually taken a turn. Elimination is gated on this
    * so that a player who simply has not moved yet is never mistaken for a player

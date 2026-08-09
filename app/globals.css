@@ -486,7 +486,6 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  text-transform: capitalize;
 }
 
 /*
@@ -506,10 +505,6 @@ h2 {
 .seat-swatch {
   width: 0.8rem;
   height: 0.8rem;
-}
-
-.player-line-main p {
-  text-transform: capitalize;
 }
 
 .turn-countdown {
@@ -552,9 +547,8 @@ h2 {
   flex: none;
   border-radius: 50%;
   background: var(--player-color);
-  /* Matches the orb treatment so the lineup marker and the board pieces read as
-     the same thing — that association is the whole point of the shape. */
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--player-color) 75%, transparent));
+  /* Same treatment as a board orb, so the lineup marker reads as the same piece. */
+  box-shadow: 0 0 12px color-mix(in srgb, var(--player-color) 75%, transparent);
 }
 
 .player-tag {
@@ -768,13 +762,20 @@ h2 {
   z-index: 2;
 }
 
-.burst {
+/*
+ * Named `orb-burst`, not `burst`. The landing page already uses `burst` as a
+ * modifier on .preview-cell, and a bare `.burst { position: absolute; inset: 0 }`
+ * captured those cells, stretched each one to fill .hero-card, and blew the
+ * preview board up into a full-bleed blur that buried the headline. Class names
+ * in this stylesheet are one flat global namespace — prefix new ones.
+ */
+.orb-burst {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.burst-particle {
+.orb-burst-particle {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -794,22 +795,22 @@ h2 {
   animation: burst-fly 400ms cubic-bezier(0.15, 0.75, 0.3, 1) forwards;
 }
 
-.burst-particle[data-direction="0"] {
+.orb-burst-particle[data-direction="0"] {
   --burst-x: 0;
   --burst-y: -150%;
 }
 
-.burst-particle[data-direction="1"] {
+.orb-burst-particle[data-direction="1"] {
   --burst-x: 150%;
   --burst-y: 0;
 }
 
-.burst-particle[data-direction="2"] {
+.orb-burst-particle[data-direction="2"] {
   --burst-x: 0;
   --burst-y: 150%;
 }
 
-.burst-particle[data-direction="3"] {
+.orb-burst-particle[data-direction="3"] {
   --burst-x: -150%;
   --burst-y: 0;
 }
@@ -850,68 +851,13 @@ h2 {
   background:
     radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), var(--player-color) 30%, color-mix(in srgb, var(--player-color) 42%, black) 78%);
   /*
-   * drop-shadow rather than box-shadow: box-shadow is drawn from the border box
-   * and ignores clip-path, so a clipped orb would keep a round halo and lose the
-   * silhouette entirely. drop-shadow is applied after clipping and follows the
-   * real shape. One shadow, not two — a 14x14 board can hold several hundred
-   * orbs and filters are the expensive part on a mid-range phone.
+   * Every orb is the same glossy sphere; colour alone says who owns it, the way
+   * the original game does. One glow rather than the two this started with — a
+   * 14x14 board can hold several hundred orbs and the shadow is the expensive
+   * part on a mid-range phone.
    */
-  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--player-color) 72%, transparent));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--player-color) 78%, transparent);
   animation: orb-materialize 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/*
- * Player identity carries on a second, non-colour channel. See PLAYER_SHAPES in
- * lib/engine/rules.ts for why: seats 1 and 7 are pink and green, which a
- * red-green colour blind player cannot separate, and the entire game is reading
- * whose orbs are whose.
- */
-.orb[data-shape="diamond"],
-.player-dot[data-shape="diamond"] {
-  border-radius: 6%;
-  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-}
-
-.orb[data-shape="triangle"],
-.player-dot[data-shape="triangle"] {
-  border-radius: 6%;
-  clip-path: polygon(50% 2%, 98% 94%, 2% 94%);
-}
-
-.orb[data-shape="square"],
-.player-dot[data-shape="square"] {
-  border-radius: 16%;
-}
-
-.orb[data-shape="hexagon"],
-.player-dot[data-shape="hexagon"] {
-  border-radius: 6%;
-  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
-}
-
-.orb[data-shape="star"],
-.player-dot[data-shape="star"] {
-  border-radius: 0;
-  clip-path: polygon(
-    50% 0%, 61% 34%, 98% 34%, 68% 56%,
-    79% 91%, 50% 69%, 21% 91%, 32% 56%,
-    2% 34%, 39% 34%
-  );
-}
-
-.orb[data-shape="pentagon"],
-.player-dot[data-shape="pentagon"] {
-  border-radius: 6%;
-  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
-}
-
-.orb[data-shape="cross"],
-.player-dot[data-shape="cross"] {
-  border-radius: 0;
-  clip-path: polygon(
-    34% 0%, 66% 0%, 66% 34%, 100% 34%, 100% 66%, 66% 66%,
-    66% 100%, 34% 100%, 34% 66%, 0% 66%, 0% 34%, 34% 34%
-  );
 }
 
 .cell.flash .orb {

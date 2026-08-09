@@ -12,14 +12,12 @@ import {
   criticalMass,
   isLegalMove,
   PLAYER_COLORS,
-  PLAYER_SHAPES,
   pickAutoMove,
   TURN_SECONDS,
   type Board,
   type GameState,
   type GridConfig,
   type Player,
-  type PlayerShape,
   type PresetId
 } from "@/lib/engine";
 import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
@@ -80,7 +78,6 @@ function buildPlayers(playerNames: string[]): Player[] {
     id: `player-${index + 1}`,
     name: name.trim() || `Player ${index + 1}`,
     color: PLAYER_COLORS[index],
-    shape: PLAYER_SHAPES[index],
     hasEnteredPlay: false,
     isEliminated: false
   }));
@@ -113,12 +110,11 @@ function buildVictorySweep(board: Board, winnerId: string): AnimationStep[] {
   });
 }
 
-function createOrbMarkup(count: number, color: string, shape: PlayerShape) {
+function createOrbMarkup(count: number, color: string) {
   return Array.from({ length: count }, (_, index) => (
     <span
       key={`${color}-${count}-${index}`}
       className={`orb count-${Math.min(count, 4)}`}
-      data-shape={shape}
       style={{ ["--player-color" as string]: color }}
     />
   ));
@@ -478,14 +474,12 @@ export function LocalArena() {
                 {playerNames.slice(0, playerCount).map((name, index) => (
                   <label key={`player-name-${index + 1}`} className="field-label">
                     <span className="seat-label">
-                      {/* Shown before the match so a player knows which marker is
-                          theirs without having to infer it from colour. */}
+                      {/* The seat's colour, shown before the match starts. */}
                       <span
                         className="player-dot seat-swatch"
-                        data-shape={PLAYER_SHAPES[index]}
                         style={{ ["--player-color" as string]: PLAYER_COLORS[index] }}
                       />
-                      Player {index + 1} · {PLAYER_SHAPES[index]}
+                      Player {index + 1} Name
                     </span>
                     <input
                       value={name}
@@ -582,14 +576,14 @@ export function LocalArena() {
                       }
                     >
                       {isBursting ? (
-                        <span className="burst" aria-hidden="true">
+                        <span className="orb-burst" aria-hidden="true">
                           {BURST_PARTICLES.map((direction) => (
-                            <span key={direction} className="burst-particle" data-direction={direction} />
+                            <span key={direction} className="orb-burst-particle" data-direction={direction} />
                           ))}
                         </span>
                       ) : null}
                       {cell.count > 0 && owner ? (
-                        <div className="orb-stack">{createOrbMarkup(cell.count, owner.color, owner.shape)}</div>
+                        <div className="orb-stack">{createOrbMarkup(cell.count, owner.color)}</div>
                       ) : null}
                     </motion.button>
                   );
@@ -648,14 +642,10 @@ export function LocalArena() {
                     style={{ ["--player-color" as string]: player.color }}
                   >
                     <div className="player-line-main">
-                      <span className="player-dot" data-shape={player.shape} />
+                      <span className="player-dot" />
                       <div>
                         <strong>{player.name}</strong>
-                        {/* Naming the shape gives the colour a text fallback, which is
-                            what actually helps when the hues are indistinguishable. */}
-                        <p>
-                          {player.shape} · {countPlayerOrbsOnBoard(displayBoard, player.id)} orbs
-                        </p>
+                        <p>{countPlayerOrbsOnBoard(displayBoard, player.id)} orbs on board</p>
                       </div>
                     </div>
                     <span className={`player-tag ${player.isEliminated ? "eliminated" : ""}`}>

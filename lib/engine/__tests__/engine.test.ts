@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyMove, createInitialState, isLegalMove, pickAutoMove } from "../engine";
-import { countTotalOrbs, criticalMass, getOwnersWithOrbs, PLAYER_SHAPES } from "../rules";
+import { countTotalOrbs, criticalMass, getOwnersWithOrbs } from "../rules";
 import { EngineError } from "../types";
 import type { GameState, GridConfig, Player } from "../types";
 
@@ -11,7 +11,6 @@ function makePlayers(count: number): Player[] {
     id: `p${index + 1}`,
     name: `Player ${index + 1}`,
     color: "#ffffff",
-    shape: PLAYER_SHAPES[index],
     hasEnteredPlay: false,
     isEliminated: false
   }));
