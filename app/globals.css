@@ -56,6 +56,17 @@ select {
   padding: 1.25rem;
 }
 
+/*
+ * The arena is a viewport-height column: header on its natural height, the
+ * stage taking whatever is left. The board then sizes itself off that
+ * remaining height rather than off a hand-tuned `100vh - 16rem` guess, which
+ * is what previously pushed it below the fold on a 950px-tall window.
+ */
+.mode-shell.arena-shell {
+  display: flex;
+  flex-direction: column;
+}
+
 .hero-card,
 .mode-header-card,
 .mode-card,
@@ -414,6 +425,20 @@ h2 {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/*
+ * The label and value are a span and a strong, both inline by default, so they
+ * rendered run together as "CurrentPlayer 1". The metric chips already stacked
+ * theirs; these were simply missed.
+ */
+.stat-box .stat-label,
+.stat-box strong {
+  display: block;
+}
+
+.stat-box strong {
+  margin-top: 0.2rem;
+}
+
 .turn-progress {
   position: relative;
   height: 0.85rem;
@@ -429,6 +454,69 @@ h2 {
   border-radius: inherit;
   background: linear-gradient(90deg, color-mix(in srgb, var(--turn-color, #8ef9ff) 65%, #67f0ff), #55ff9a);
   box-shadow: 0 0 18px color-mix(in srgb, var(--turn-color, #8ef9ff) 48%, transparent);
+}
+
+/*
+ * The arena header holds three controls, and the shared auto-fit grid gives each
+ * a 180px minimum — more than the header's narrow second column can fit on one
+ * row, so they wrapped and pushed the board down the page. Flex instead, so they
+ * size to their content and stay on one line.
+ */
+.local-header-card .header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.local-header-card .header-actions > * {
+  min-height: 2.9rem;
+  padding: 0.6rem 1rem;
+}
+
+.sound-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.seat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  text-transform: capitalize;
+}
+
+/*
+ * Seat labels wrap to two lines at some widths ("Player 2 ·" / "Diamond"),
+ * which pushed those inputs down relative to their neighbours. Stretch each
+ * label to the row height and pin the input to the bottom so the inputs line up
+ * regardless of how the text breaks.
+ */
+.names-grid .field-label {
+  height: 100%;
+}
+
+.names-grid .field-label input {
+  margin-top: auto;
+}
+
+.seat-swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.player-line-main p {
+  text-transform: capitalize;
+}
+
+.turn-countdown {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
 }
 
 .player-list {
@@ -459,11 +547,14 @@ h2 {
 }
 
 .player-dot {
-  width: 1rem;
-  height: 1rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
   border-radius: 50%;
   background: var(--player-color);
-  box-shadow: 0 0 16px var(--player-color);
+  /* Matches the orb treatment so the lineup marker and the board pieces read as
+     the same thing — that association is the whole point of the shape. */
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--player-color) 75%, transparent));
 }
 
 .player-tag {
@@ -487,6 +578,8 @@ h2 {
   margin: 1rem auto 0;
   display: grid;
   gap: 1rem;
+  flex: 1;
+  min-height: 0;
 }
 
 .timer-core-label,
@@ -500,9 +593,17 @@ h2 {
 
 .board-stage {
   display: grid;
-  grid-template-columns: minmax(280px, 350px) minmax(0, 1fr) minmax(280px, 350px);
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
   gap: 1rem;
   align-items: start;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Side columns scroll independently so a long lineup cannot push the board down. */
+.board-stage > .arena-sidecard {
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .arena-sidecard {
@@ -516,7 +617,10 @@ h2 {
 
 .main-stage-panel {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
+  min-height: 0;
+  height: 100%;
 }
 
 .stage-status {
@@ -568,7 +672,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: min(calc(100vh - 14rem), 880px);
+  min-height: 0;
   padding: 1rem;
   box-shadow:
     var(--shadow),
@@ -579,9 +683,17 @@ h2 {
 .board {
   display: grid;
   gap: 3px;
+  /*
+   * Square, and bounded by whichever of the two axes runs out first. The parent
+   * has a definite height, so `height: 100%` plus `aspect-ratio` derives the
+   * width — no viewport arithmetic, and it stays correct whatever the header
+   * above happens to measure.
+   */
   aspect-ratio: 1;
-  width: min(100%, calc(100vh - 16rem), 860px);
-  max-height: calc(100vh - 16rem);
+  height: 100%;
+  width: auto;
+  max-width: min(100%, 860px);
+  max-height: 860px;
   margin: 0 auto;
   padding: 0.4rem;
   border-radius: 28px;
@@ -636,6 +748,91 @@ h2 {
   animation: energy-ring 760ms ease-out;
 }
 
+/*
+ * Explosion particles.
+ *
+ * Four per exploding cell, one per neighbour, so the burst reads as orbs being
+ * thrown outward rather than as generic sparkle. Animated purely with transform
+ * and opacity — both composited, neither triggering layout or paint — because a
+ * 14x14 board can have a lot of these on screen at once and the brief is
+ * explicit about not tanking frame rate on a mid-range Android.
+ */
+/*
+ * Cells clip their contents so orb glow and the energy ring stay inside the
+ * tile. Particles are the one thing that must escape — they travel toward the
+ * neighbours the orbs are actually going to — so the clip is lifted for the one
+ * step a cell is bursting, and it is raised above its neighbours while it does.
+ */
+.cell.bursting {
+  overflow: visible;
+  z-index: 2;
+}
+
+.burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.burst-particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22%;
+  height: 22%;
+  margin: -11% 0 0 -11%;
+  border-radius: 50%;
+  /*
+   * An exploding cell is emptied, so it has no owner and no --player-color of
+   * its own. Fall through to the board's --turn-color, which is the player whose
+   * reaction this is — otherwise every burst would be default cyan.
+   */
+  background: var(--player-color, var(--turn-color, #8ef9ff));
+  opacity: 0;
+  box-shadow: 0 0 10px var(--player-color, var(--turn-color, #8ef9ff));
+  will-change: transform, opacity;
+  animation: burst-fly 400ms cubic-bezier(0.15, 0.75, 0.3, 1) forwards;
+}
+
+.burst-particle[data-direction="0"] {
+  --burst-x: 0;
+  --burst-y: -150%;
+}
+
+.burst-particle[data-direction="1"] {
+  --burst-x: 150%;
+  --burst-y: 0;
+}
+
+.burst-particle[data-direction="2"] {
+  --burst-x: 0;
+  --burst-y: 150%;
+}
+
+.burst-particle[data-direction="3"] {
+  --burst-x: -150%;
+  --burst-y: 0;
+}
+
+/*
+ * Stays large and bright for most of its flight, then drops away quickly. An
+ * earlier version shrank to 0.2 scale almost immediately, which was technically
+ * animating but effectively invisible — a 4px dot at 75% opacity.
+ */
+@keyframes burst-fly {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(0.7);
+  }
+  60% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--burst-x, 0), var(--burst-y, 0), 0) scale(0.45);
+  }
+}
+
 .orb-stack {
   position: relative;
   width: 86%;
@@ -652,10 +849,69 @@ h2 {
   border-radius: 50%;
   background:
     radial-gradient(circle at 38% 34%, rgba(255, 255, 255, 0.95), var(--player-color) 30%, color-mix(in srgb, var(--player-color) 42%, black) 78%);
-  box-shadow:
-    0 0 24px color-mix(in srgb, var(--player-color) 80%, transparent),
-    0 0 42px color-mix(in srgb, var(--player-color) 42%, transparent);
+  /*
+   * drop-shadow rather than box-shadow: box-shadow is drawn from the border box
+   * and ignores clip-path, so a clipped orb would keep a round halo and lose the
+   * silhouette entirely. drop-shadow is applied after clipping and follows the
+   * real shape. One shadow, not two — a 14x14 board can hold several hundred
+   * orbs and filters are the expensive part on a mid-range phone.
+   */
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--player-color) 72%, transparent));
   animation: orb-materialize 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Player identity carries on a second, non-colour channel. See PLAYER_SHAPES in
+ * lib/engine/rules.ts for why: seats 1 and 7 are pink and green, which a
+ * red-green colour blind player cannot separate, and the entire game is reading
+ * whose orbs are whose.
+ */
+.orb[data-shape="diamond"],
+.player-dot[data-shape="diamond"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+.orb[data-shape="triangle"],
+.player-dot[data-shape="triangle"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 2%, 98% 94%, 2% 94%);
+}
+
+.orb[data-shape="square"],
+.player-dot[data-shape="square"] {
+  border-radius: 16%;
+}
+
+.orb[data-shape="hexagon"],
+.player-dot[data-shape="hexagon"] {
+  border-radius: 6%;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
+}
+
+.orb[data-shape="star"],
+.player-dot[data-shape="star"] {
+  border-radius: 0;
+  clip-path: polygon(
+    50% 0%, 61% 34%, 98% 34%, 68% 56%,
+    79% 91%, 50% 69%, 21% 91%, 32% 56%,
+    2% 34%, 39% 34%
+  );
+}
+
+.orb[data-shape="pentagon"],
+.player-dot[data-shape="pentagon"] {
+  border-radius: 6%;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+.orb[data-shape="cross"],
+.player-dot[data-shape="cross"] {
+  border-radius: 0;
+  clip-path: polygon(
+    34% 0%, 66% 0%, 66% 34%, 100% 34%, 100% 66%, 66% 66%,
+    66% 100%, 34% 100%, 34% 66%, 0% 66%, 0% 34%, 34% 34%
+  );
 }
 
 .cell.flash .orb {
@@ -851,6 +1107,26 @@ h2 {
   }
 }
 
+/*
+ * Once the match is running, the marketing header is dead weight above the only
+ * thing that matters. Collapse the blurb and shrink the title so the board
+ * clears the fold.
+ */
+.mode-shell[data-phase="playing"] .local-header-card .hero-copy,
+.mode-shell[data-phase="playing"] .local-header-card .eyebrow {
+  display: none;
+}
+
+.mode-shell[data-phase="playing"] .local-header-card h1 {
+  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  margin: 0;
+}
+
+.mode-shell[data-phase="playing"] .local-header-card {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
 @media (max-width: 980px) {
   .mode-header-card,
   .local-layout,
@@ -870,13 +1146,72 @@ h2 {
     flex-direction: column;
   }
 
+  /* Height-driven sizing only makes sense while the stage owns a column. */
+  .arena-layout,
+  .board-stage,
+  .main-stage-panel {
+    height: auto;
+    min-height: 0;
+  }
+
+  .board-stage > .arena-sidecard {
+    max-height: none;
+    overflow-y: visible;
+  }
+
   .next-board-frame {
     min-height: auto;
   }
 
   .board {
     width: 100%;
+    height: auto;
+    max-width: 100%;
     max-height: none;
+  }
+
+  /*
+   * Board first on a phone. The product brief expects most sessions to be on
+   * one, and previously you had to scroll past the whole setup panel and a
+   * half-empty metrics block to reach the game.
+   */
+  .board-stage > .board-panel {
+    order: -1;
+  }
+
+  /* Within the stage, the board also outranks the match-feed copy. */
+  .main-stage-panel > .board-frame {
+    order: -1;
+  }
+
+  /*
+   * During play the heading already says whose turn it is, and the same status
+   * sentence is one card further down. Drop the duplicate so the board starts
+   * higher up the page.
+   */
+  .mode-shell[data-phase="playing"] .stage-copy p,
+  .mode-shell[data-phase="playing"] .stage-kicker {
+    display: none;
+  }
+
+  /* Two short buttons side by side beat two full-width stacked ones. */
+  .mode-shell[data-phase="playing"] .local-header-card .header-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .mode-shell[data-phase="playing"] .local-header-card {
+    padding: 0.85rem 1rem;
+  }
+
+  .stage-metrics {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .metric-chip {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
@@ -898,5 +1233,30 @@ h2 {
 
   .victory-stats {
     grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * Respect a reduced-motion preference.
+ *
+ * This game is built out of pulsing cells, materialising orbs, energy rings and
+ * a board that breathes while a reaction resolves — which is the appeal, and
+ * also exactly the kind of thing that triggers motion sickness or migraine. The
+ * cascade still steps through its frames so the game stays readable and
+ * playable; only the decorative motion stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ambient,
+  .background-grid {
+    animation: none !important;
   }
 }
