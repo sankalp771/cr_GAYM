@@ -11,10 +11,10 @@ const cell = (page: Page, row: number, col: number) =>
  * number of moves played so far — which makes it the cheapest way to tell that
  * every bot in a queue has actually taken its turn, cascade or no cascade.
  */
-const orbCount = (page: Page) => page.locator(".board .orb").count();
+const orbCount = (page: Page) => page.getByTestId("orb").count();
 
-const turnHeading = (page: Page, name: string) =>
-  page.getByRole("heading", { name: new RegExp(`^${name} controls the next move$`) });
+/** The match screen states the turn in its top bar rather than a heading. */
+const turnHeading = (page: Page, name: string) => page.getByText(`${name} to move`, { exact: true });
 
 /** A bot waits ~600ms before committing, then its cascade animates. Seven of them add up. */
 const botTurnBudgetMs = 12_000;
@@ -35,11 +35,11 @@ test.describe("computer opponents", () => {
 
   test("one computer opponent replies and hands the turn back", async ({ page }) => {
     await page.goto("/local");
-    await page.getByRole("button", { name: "Start Battle" }).first().click();
+    await page.getByRole("button", { name: "Start Battle" }).click();
 
     await expect(turnHeading(page, "Player 1")).toBeVisible();
     // The seat is marked as a bot in the lineup, not just in the setup panel.
-    await expect(page.locator(".player-line", { hasText: "Player 2" }).locator(".ai-badge")).toHaveText("CPU");
+    await expect(page.getByTestId("player-row").filter({ hasText: "Player 2" }).getByTestId("cpu-tag")).toHaveText("CPU");
 
     await cell(page, 2, 2).click();
     await expect(cell(page, 2, 2)).toHaveAccessibleName(/1 orb owned by Player 1$/);
@@ -48,7 +48,7 @@ test.describe("computer opponents", () => {
     await expect.poll(() => orbCount(page), { timeout: botTurnBudgetMs }).toBe(2);
 
     await expect(turnHeading(page, "Player 1")).toBeVisible({ timeout: botTurnBudgetMs });
-    await expect(page.locator(".board button.playable").first()).toBeEnabled();
+    await expect(page.getByTestId("board").locator("button:not([disabled])").first()).toBeEnabled();
   });
 
   test("seven computer opponents all play before the turn returns to the human", async ({ page }) => {
@@ -57,10 +57,10 @@ test.describe("computer opponents", () => {
 
     await page.goto("/local");
     await page.getByLabel("Players").selectOption("8");
-    await page.getByRole("button", { name: "Start Battle" }).first().click();
+    await page.getByRole("button", { name: "Start Battle" }).click();
 
     await expect(turnHeading(page, "Player 1")).toBeVisible();
-    await expect(page.locator(".player-line .ai-badge")).toHaveCount(7);
+    await expect(page.getByTestId("cpu-tag")).toHaveCount(7);
 
     await cell(page, 2, 2).click();
 
@@ -68,7 +68,7 @@ test.describe("computer opponents", () => {
     await expect.poll(() => orbCount(page), { timeout: 60_000 }).toBe(8);
 
     await expect(turnHeading(page, "Player 1")).toBeVisible({ timeout: botTurnBudgetMs });
-    await expect(page.locator(".board button.playable").first()).toBeEnabled();
+    await expect(page.getByTestId("board").locator("button:not([disabled])").first()).toBeEnabled();
   });
 
   test("a bot takes exactly one turn, never two in a row", async ({ page }) => {
@@ -77,7 +77,7 @@ test.describe("computer opponents", () => {
     // human's turn is skipped.
     await page.goto("/local");
     await page.getByLabel("Players").selectOption("3");
-    await page.getByRole("button", { name: "Start Battle" }).first().click();
+    await page.getByRole("button", { name: "Start Battle" }).click();
 
     await expect(turnHeading(page, "Player 1")).toBeVisible();
     await cell(page, 2, 2).click();
@@ -96,10 +96,10 @@ test.describe("computer opponents", () => {
     // The opposite guard: nothing should move on its own when no seat is a bot.
     await page.goto("/local");
     await page.getByLabel("Player 2 control").selectOption("human");
-    await page.getByRole("button", { name: "Start Battle" }).first().click();
+    await page.getByRole("button", { name: "Start Battle" }).click();
 
     await expect(turnHeading(page, "Player 1")).toBeVisible();
-    await expect(page.locator(".player-line .ai-badge")).toHaveCount(0);
+    await expect(page.getByTestId("cpu-tag")).toHaveCount(0);
 
     await cell(page, 2, 2).click();
     await expect(turnHeading(page, "Player 2")).toBeVisible();

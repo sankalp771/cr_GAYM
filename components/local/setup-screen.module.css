@@ -1,0 +1,171 @@
+/*
+ * Setup screen. Scoped with CSS Modules rather than added to app/globals.css —
+ * the global sheet is one flat namespace shared with the landing page, and it
+ * has silently broken this app twice.
+ */
+
+.screen {
+  position: relative;
+  min-height: 100dvh;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.header {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 1;
+}
+
+.subtitle {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.panel {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 1.25rem;
+  border-radius: 26px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.panelTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.badge {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(142, 249, 255, 0.1);
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.topRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fieldLabel {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.control {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(142, 249, 255, 0.2);
+  border-radius: 14px;
+  background: rgba(2, 8, 20, 0.95);
+  color: var(--text);
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Seats wrap into as many columns as fit, so eight of them stay compact. */
+.seats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+.seat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.seatLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.seatDot {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--player-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--player-color) 75%, transparent);
+}
+
+.seatControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.actions > * {
+  flex: 1 1 12rem;
+}
+
+@media (max-width: 640px) {
+  .screen {
+    padding: 0.85rem;
+  }
+
+  .panel {
+    padding: 1rem;
+    border-radius: 20px;
+  }
+}

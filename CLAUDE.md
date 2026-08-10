@@ -118,6 +118,24 @@ for the rest, so a match can be human + 1 through human + 7 bots. The seat kinds
 are snapshotted when the match starts, so editing the panel mid-match cannot
 change who is driving a seat.
 
+### Difficulty
+
+`chooseAiMove(state, difficulty, random)` wraps the heuristic. Difficulty is
+expressed as how often a seat *declines* its best move and plays a random legal
+one instead — `easy` always, `normal` 40% of the time, `hard` never. One
+heuristic, three genuine strengths, rather than three opponents to maintain.
+
+At `hard` the wrapper returns `chooseGreedyMove` directly rather than burning an
+rng draw on a roll it cannot act on, so `hard` **is** the greedy move for a given
+seed. A test asserts that equivalence; keep it true.
+
+Difficulty is chosen in the settings popover, persists to `localStorage`, and
+takes effect from the computer's next move. The bot reads it through a ref for
+the same stale-closure reason it reads game state through one.
+
+When a depth search lands it should become a fourth level rather than replacing
+`hard`, so a player's chosen difficulty keeps playing the way they expect.
+
 Two things in `components/local-arena.tsx` are load-bearing:
 
 - A bot's move goes through the same `runMove` a click does. There is one move

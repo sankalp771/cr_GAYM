@@ -1,0 +1,456 @@
+/*
+ * Match screen: pitch black, board first, everything else deliberately quiet.
+ *
+ * Scoped with CSS Modules. The global sheet is a single flat namespace shared
+ * with the landing page and has broken this app twice.
+ */
+
+.screen {
+  /* dvh, not vh: on a phone vh includes the retracting browser chrome, which
+     would push the bottom of the board under the address bar. */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  /* Pitch black so the orbs are the only light source on the page. */
+  background: #000;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.topBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.turn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.turnDot {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--turn-color, #8ef9ff);
+  box-shadow: 0 0 14px var(--turn-color, #8ef9ff);
+}
+
+.turnName {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turnClock {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.compactButton {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 12px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 280px);
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+/*
+ * Sizing the board.
+ *
+ * `container-type: size` lets the board ask this box for both of its axes, so
+ * `min(100cqw, 100cqh)` is exactly the largest square that fits. Doing it with
+ * aspect-ratio plus max-width/max-height instead produces a non-square box when
+ * the width is the binding constraint — which is how the board ended up 674x860
+ * at eight seats.
+ */
+.boardArea {
+  min-width: 0;
+  min-height: 0;
+  container-type: size;
+  display: grid;
+  place-items: center;
+}
+
+.board {
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  display: grid;
+  gap: 2px;
+  padding: 0.35rem;
+  border-radius: 20px;
+  background: #04070f;
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 170, 255, 0.14),
+    0 0 60px rgba(0, 0, 0, 0.6);
+}
+
+.side {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sideCard {
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sideTitle {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.timerTrack {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.timerFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--turn-color, #8ef9ff);
+}
+
+.statusLine {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.lineup {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.playerCurrent {
+  border-color: var(--player-color);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--player-color) 30%, transparent);
+}
+
+.playerOut {
+  opacity: 0.45;
+}
+
+.playerDot {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--player-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--player-color) 75%, transparent);
+}
+
+.playerName {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerOrbs {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpuTag {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(142, 249, 255, 0.12);
+  color: var(--accent);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+}
+
+/*
+ * Below the two-column breakpoint the board keeps the top of the screen and the
+ * panel sits under it. The board still may not be scrolled away from.
+ */
+@media (max-width: 860px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .side {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: 8.5rem;
+  }
+
+  .sideCard {
+    flex: 1 0 13rem;
+  }
+}
+
+/* ---- cells, orbs, explosion particles ---- */
+
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 149, 255, 0.18);
+  background: #060a14;
+  overflow: hidden;
+  padding: 0;
+}
+
+.cellPlayable {
+  cursor: pointer;
+  box-shadow: inset 0 0 14px color-mix(in srgb, var(--turn-color, #8ef9ff) 12%, transparent);
+}
+
+.cellPlayable:hover {
+  border-color: color-mix(in srgb, var(--turn-color, #8ef9ff) 45%, transparent);
+}
+
+.cellBlocked {
+  cursor: not-allowed;
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* One orb short of exploding — the tell that makes the game readable. */
+.cellCritical {
+  animation: pulse 900ms ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px color-mix(in srgb, var(--player-color) 25%, transparent);
+  }
+  50% {
+    box-shadow: inset 0 0 24px color-mix(in srgb, var(--player-color) 55%, transparent);
+  }
+}
+
+/* The clip is lifted only while a cell is bursting, so particles can cross into
+   the neighbours the orbs are actually travelling to. */
+.cellBursting {
+  overflow: visible;
+  z-index: 2;
+}
+
+.orbStack {
+  position: relative;
+  width: 84%;
+  height: 84%;
+  display: grid;
+  place-items: center;
+}
+
+.orb {
+  position: absolute;
+  width: 36%;
+  height: 36%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 36% 32%,
+    rgba(255, 255, 255, 0.95),
+    var(--player-color) 32%,
+    color-mix(in srgb, var(--player-color) 40%, black) 80%
+  );
+  box-shadow: 0 0 18px color-mix(in srgb, var(--player-color) 80%, transparent);
+  animation: materialize 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Animates `scale` and `opacity`, never `transform` — `transform` is carrying
+ * each orb's position within the stack, and an animation on it would snap every
+ * orb to the centre for the duration and then jump.
+ */
+@keyframes materialize {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* Two orbs sit side by side, three form a triangle, four a diamond. */
+.count2 :nth-child(1) { transform: translateX(-32%); }
+.count2 :nth-child(2) { transform: translateX(32%); }
+.count3 :nth-child(1) { transform: translate(-32%, 24%); }
+.count3 :nth-child(2) { transform: translate(32%, 24%); }
+.count3 :nth-child(3) { transform: translateY(-30%); }
+.count4 :nth-child(1) { transform: translate(-32%, -30%); }
+.count4 :nth-child(2) { transform: translate(32%, -30%); }
+.count4 :nth-child(3) { transform: translate(-32%, 30%); }
+.count4 :nth-child(4) { transform: translate(32%, 30%); }
+
+.burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.burstParticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22%;
+  height: 22%;
+  margin: -11% 0 0 -11%;
+  border-radius: 50%;
+  background: var(--player-color, var(--turn-color, #8ef9ff));
+  box-shadow: 0 0 10px var(--player-color, var(--turn-color, #8ef9ff));
+  opacity: 0;
+  will-change: transform, opacity;
+  /* transform and opacity only: both composited, so a 14x14 board full of these
+     does not trigger layout or paint on a mid-range phone. */
+  animation: fly 400ms cubic-bezier(0.15, 0.75, 0.3, 1) forwards;
+}
+
+.burstParticle[data-direction="0"] { --bx: 0; --by: -150%; }
+.burstParticle[data-direction="1"] { --bx: 150%; --by: 0; }
+.burstParticle[data-direction="2"] { --bx: 0; --by: 150%; }
+.burstParticle[data-direction="3"] { --bx: -150%; --by: 0; }
+
+@keyframes fly {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(0.7);
+  }
+  60% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--bx, 0), var(--by, 0), 0) scale(0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cellCritical,
+  .orb,
+  .burstParticle {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ---- victory modal ---- */
+
+.modalShell {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.modalCard {
+  position: relative;
+  width: min(28rem, 100%);
+  padding: 1.5rem;
+  border-radius: 22px;
+  border: 1px solid rgba(142, 249, 255, 0.22);
+  background: #070d1c;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+  text-align: center;
+}
+
+.modalWinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+}
+
+.modalCopy {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+}
+
+.modalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.modalActions > * {
+  flex: 1 1 9rem;
+}
+
+@media (max-width: 480px) {
+  .topBar {
+    padding: 0.5rem 0.6rem;
+    gap: 0.45rem;
+  }
+
+  .compactButton {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.85rem;
+  }
+
+  .turnName {
+    font-size: 0.92rem;
+  }
+}

@@ -1,0 +1,90 @@
+/* Settings popover. Scoped, so nothing here can reach the landing page. */
+
+.menu {
+  position: relative;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.triggerCompact {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 12px;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 60;
+  width: min(17rem, calc(100vw - 2rem));
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.9rem;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid rgba(142, 249, 255, 0.18);
+  /* Fully opaque. At 97% the board read through it and competed with the options. */
+  background: #070d1c;
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.6);
+}
+
+.group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.option:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* The input keeps focus, so the ring has to be drawn on the row around it. */
+.option:focus-within {
+  background: rgba(142, 249, 255, 0.08);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.option input {
+  accent-color: var(--accent);
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+/*
+ * On a narrow match bar the gear carries the meaning on its own — the button
+ * keeps its aria-label, so hiding the word costs nothing to a screen reader and
+ * buys the turn indicator the room it needs to not be truncated.
+ */
+@media (max-width: 480px) {
+  .triggerCompact .triggerLabel {
+    display: none;
+  }
+}
