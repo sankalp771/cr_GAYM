@@ -2,8 +2,9 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { AI_DIFFICULTIES, type AiDifficulty } from "@/lib/engine";
+import styles from "./settings-menu.module.css";
 
-type SettingsMenuProps = {
+export type SettingsMenuProps = {
   isMuted: boolean;
   onToggleMute: () => void;
   difficulty: AiDifficulty;
@@ -17,12 +18,18 @@ const DIFFICULTY_LABEL: Record<AiDifficulty, string> = {
 };
 
 /**
- * Settings popover: sound and computer difficulty.
+ * Settings popover: computer difficulty and sound.
  *
- * These were heading for separate header buttons, which is how a header ends up
- * with five controls and no room for the board. One gear, one panel.
+ * One gear rather than a button each — the arena header had already grown wide
+ * enough to push the board off screen once.
  */
-export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyChange }: SettingsMenuProps) {
+export function SettingsMenu({
+  isMuted,
+  onToggleMute,
+  difficulty,
+  onDifficultyChange,
+  compact = false
+}: SettingsMenuProps & { compact?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -30,7 +37,7 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
   const difficultyName = useId();
 
   // Close on outside click and on Escape. Escape also returns focus to the
-  // trigger, otherwise a keyboard user is left with focus on a removed node.
+  // trigger, or a keyboard user is left focused on a removed node.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -56,11 +63,11 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
   }, [isOpen]);
 
   return (
-    <div className="settings-menu" ref={containerRef}>
+    <div className={styles.menu} ref={containerRef}>
       <button
         ref={buttonRef}
         type="button"
-        className="ghost-link button-reset settings-trigger"
+        className={`ghost-link button-reset ${styles.trigger} ${compact ? styles.triggerCompact : ""}`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={panelId}
@@ -68,15 +75,15 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
         onClick={() => setIsOpen((open) => !open)}
       >
         <span aria-hidden="true">⚙</span>
-        <span className="settings-trigger-label">Settings</span>
+        <span className={styles.triggerLabel}>Settings</span>
       </button>
 
       {isOpen ? (
-        <div className="settings-panel" id={panelId} role="dialog" aria-label="Settings">
-          <fieldset className="settings-group">
-            <legend>Computer difficulty</legend>
+        <div className={styles.panel} id={panelId} role="dialog" aria-label="Settings">
+          <fieldset className={styles.group}>
+            <legend className={styles.legend}>Computer difficulty</legend>
             {AI_DIFFICULTIES.map((level) => (
-              <label key={level} className="settings-option">
+              <label key={level} className={styles.option}>
                 <input
                   type="radio"
                   name={difficultyName}
@@ -84,20 +91,16 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
                   checked={difficulty === level}
                   onChange={() => onDifficultyChange(level)}
                 />
-                <span>
-                  <strong>{DIFFICULTY_LABEL[level]}</strong>
-                </span>
+                <span>{DIFFICULTY_LABEL[level]}</span>
               </label>
             ))}
           </fieldset>
 
-          <fieldset className="settings-group">
-            <legend>Sound</legend>
-            <label className="settings-option settings-switch">
+          <fieldset className={styles.group}>
+            <legend className={styles.legend}>Sound</legend>
+            <label className={styles.option}>
               <input type="checkbox" checked={!isMuted} onChange={onToggleMute} />
-              <span>
-                <strong>Sound effects</strong>
-              </span>
+              <span>Sound effects</span>
             </label>
           </fieldset>
         </div>
