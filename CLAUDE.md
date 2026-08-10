@@ -107,11 +107,14 @@ combinations.
 
 ## The computer opponent
 
+There are two opponents, not one.
+
 `lib/engine/ai.ts` holds `chooseGreedyMove(state, random)`. It is one ply: score
 every legal move by the position it produces and take the best, breaking ties
-with the injected `random`. It is **not** a search — no minimax, no alpha-beta.
-Depth search is a separate piece of work; if it lands, it goes beside this
-function rather than inside it.
+with the injected `random`. It is **not** a search.
+
+`lib/engine/search.ts` holds the depth search. It sits *beside* the heuristic,
+not inside it — see below.
 
 Seats are chosen per seat in Battle Setup, defaulting to one human and computers
 for the rest, so a match can be human + 1 through human + 7 bots. The seat kinds
@@ -120,21 +123,59 @@ change who is driving a seat.
 
 ### Difficulty
 
-`chooseAiMove(state, difficulty, random)` wraps the heuristic. Difficulty is
-expressed as how often a seat *declines* its best move and plays a random legal
-one instead — `easy` always, `normal` 40% of the time, `hard` never. One
-heuristic, three genuine strengths, rather than three opponents to maintain.
+`chooseAiMove(state, difficulty, random)` picks between them. The first three
+levels are one heuristic at three honesties, expressed as how often a seat
+*declines* its best move and plays a random legal one instead — `easy` always,
+`normal` 40% of the time, `hard` never. That is three genuine strengths without
+three opponents to maintain.
 
 At `hard` the wrapper returns `chooseGreedyMove` directly rather than burning an
 rng draw on a roll it cannot act on, so `hard` **is** the greedy move for a given
 seed. A test asserts that equivalence; keep it true.
 
+`expert` is the fourth rung and the only one that is a different opponent: the
+depth search. It was added beside `hard` rather than replacing it, deliberately —
+a player who settled on Hard should keep getting the opponent they know, and a
+difficulty that silently gets stronger is a bad surprise. **If a fifth level ever
+lands, extend the ladder the same way rather than upgrading an existing rung.**
+
 Difficulty is chosen in the settings popover, persists to `localStorage`, and
 takes effect from the computer's next move. The bot reads it through a ref for
 the same stale-closure reason it reads game state through one.
 
-When a depth search lands it should become a fourth level rather than replacing
-`hard`, so a player's chosen difficulty keeps playing the way they expect.
+### The depth search
+
+`searchBestMove(state, random, options)` is paranoid alpha-beta with iterative
+deepening. Three things about it are decisions rather than details:
+
+- **The opponent model is paranoid.** Minimax is a two-player theorem and this
+  game seats eight. Everyone who is not the mover is collapsed into one opponent
+  minimising the mover's score. Maxn — every seat maximising its own — is more
+  truthful and prunes almost nothing, because alpha-beta needs a single scalar to
+  bound against.
+- **The budget is nodes, not milliseconds.** The engine may not read the clock,
+  so a time budget is not available; a node budget is also better, because it is
+  deterministic and a server and a client cannot disagree about the best move
+  because one of them was busy. Iterative deepening turns the budget into a
+  guarantee: small boards get more plies than large ones for the same cost,
+  automatically. Measured: depth 5 on Classic, depth 3 on XXL, worst case 14–27ms.
+- **It does not run on the engine's own `applyMove`.** That manages ~88k
+  positions/sec because it clones every cell as an object; the search's flat
+  typed-array mirror manages 0.5M–1.1M, which is the difference between depth 2
+  and depth 5.
+
+That last one means the rules exist twice, which is a genuine hazard. It is
+covered mechanically, not by care: `lib/engine/__tests__/search.test.ts` replays
+random games through both implementations and compares every cell, every
+elimination flag and the winner after **every legal move**, not just the played
+one. **If you change a gameplay rule, that test is what tells you the search
+still agrees — do not skip or weaken it.**
+
+`DEFAULT_MAX_NODES` was set by measurement, and the table justifying it is in the
+docstring. Raising it costs latency on the mid-range Android the brief calls out,
+where this machine's 27ms is nearer 100ms. If a level ever needs more depth than
+the budget allows, move the search to a Web Worker rather than raising the
+ceiling — it runs on the main thread today only because it is bounded.
 
 Two things in `components/local-arena.tsx` are load-bearing:
 

@@ -14,7 +14,8 @@ export type SettingsMenuProps = {
 const DIFFICULTY_LABEL: Record<AiDifficulty, string> = {
   easy: "Easy",
   normal: "Normal",
-  hard: "Hard"
+  hard: "Hard",
+  expert: "Expert"
 };
 
 /**

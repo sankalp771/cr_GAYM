@@ -14,38 +14,16 @@
 
 import { applyMove, isLegalMove } from "./engine";
 import { criticalMass, getNeighbors, getValidMoves } from "./rules";
+import { chooseSearchMove } from "./search";
 import type { Board, Cell, GameState, GridConfig, Move, PlayerId } from "./types";
-
-/**
- * Scoring weights.
- *
- * The units are "orbs", so the weights say how many orbs of material each
- * consideration is worth. They are ordered by how decisive they are:
- *
- * - `WIN_SCORE` dominates everything, so a move that ends the match is always
- *   taken. Nothing else can add up to it.
- * - `MATERIAL_WEIGHT` is the main signal. Every move adds exactly one orb to
- *   the mover, and a capture also flips the victim's orbs, so capturing `k`
- *   orbs swings the balance by `1 + 2k` — a single-orb capture already scores
- *   12 here, comfortably above any positional term. That is what makes "reach
- *   critical mass next to a loaded enemy cell" the strongly preferred move
- *   without needing a special case for it: the capture shows up as material.
- * - `RISK_WEIGHT` outweighs `THREAT_WEIGHT` because the opponent moves next.
- *   Orbs parked beside an enemy cell that is one orb from exploding are orbs
- *   you are about to hand over; the mirror image is only a maybe.
- * - `POSITION_WEIGHT` is the tie-breaker. A corner needs 2 orbs to hold and an
- *   interior cell needs 4, so corners and edges are cheaper to keep and dearer
- *   to take. It is worth a few tenths of an orb, never enough to pass up a
- *   capture for.
- */
-const WIN_SCORE = 1_000_000;
-const MATERIAL_WEIGHT = 6;
-const RISK_WEIGHT = 3;
-const THREAT_WEIGHT = 1;
-const POSITION_WEIGHT = 1.5;
-
-/** Scores this close together count as equal, and the injected rng breaks the tie. */
-const SCORE_EPSILON = 1e-9;
+import {
+  MATERIAL_WEIGHT,
+  POSITION_WEIGHT,
+  RISK_WEIGHT,
+  SCORE_EPSILON,
+  THREAT_WEIGHT,
+  WIN_SCORE
+} from "./weights";
 
 /** Orbs held by `playerId` minus the orbs held by everyone else. */
 function materialBalance(board: Board, playerId: PlayerId): number {
@@ -177,11 +155,11 @@ export function chooseGreedyMove(state: GameState, random: () => number): Move |
 /**
  * Difficulty levels for a computer seat.
  *
- * The greedy heuristic wins about 98% of games against random play, which makes
- * it a poor default for someone picking the game up. Rather than write three
- * separate opponents, difficulty is expressed as how often the seat *declines*
- * to play its best move and plays a random legal one instead. That gives a real
- * curve out of one heuristic:
+ * The first three are one heuristic at three honesties. The greedy move wins
+ * about 98% of games against random play, which makes it a poor default for
+ * someone picking the game up, so rather than write separate opponents,
+ * difficulty is expressed as how often the seat *declines* to play its best move
+ * and plays a random legal one instead:
  *
  * - `easy` never plays the greedy move — it is the random auto-player, which is
  *   the same thing a timed-out human turn does.
@@ -189,18 +167,22 @@ export function chooseGreedyMove(state: GameState, random: () => number): Move |
  *   beatable by someone learning the game.
  * - `hard` is the greedy move every time.
  *
- * When a depth search lands it becomes a fourth level rather than replacing
- * `hard`, so the difficulty a player has settled on keeps playing the same way.
+ * `expert` is the one that is genuinely a different opponent: the depth search
+ * in `search.ts`, which reads several moves ahead instead of one. It was added
+ * *beside* `hard` rather than replacing it, deliberately — someone who settled
+ * on Hard should keep getting the opponent they are used to, and a difficulty
+ * setting that silently gets stronger is a bad surprise, not a feature.
  */
-export type AiDifficulty = "easy" | "normal" | "hard";
+export type AiDifficulty = "easy" | "normal" | "hard" | "expert";
 
-export const AI_DIFFICULTIES: readonly AiDifficulty[] = ["easy", "normal", "hard"];
+export const AI_DIFFICULTIES: readonly AiDifficulty[] = ["easy", "normal", "hard", "expert"];
 
-/** Probability of playing a random legal move instead of the best one. */
+/** Probability of playing a random legal move instead of the best one. Not consulted for `expert`. */
 const BLUNDER_CHANCE: Record<AiDifficulty, number> = {
   easy: 1,
   normal: 0.4,
-  hard: 0
+  hard: 0,
+  expert: 0
 };
 
 export function isAiDifficulty(value: unknown): value is AiDifficulty {
@@ -218,6 +200,10 @@ export function chooseAiMove(state: GameState, difficulty: AiDifficulty, random:
 
   const current = state.players[state.currentPlayerIndex];
   if (!current || current.isEliminated) return null;
+
+  // The only level that is not the one-ply heuristic. It reads ahead instead of
+  // rolling, so it never touches the blunder table.
+  if (difficulty === "expert") return chooseSearchMove(state, random);
 
   const blunderChance = BLUNDER_CHANCE[difficulty];
 
