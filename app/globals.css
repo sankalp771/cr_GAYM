@@ -390,6 +390,12 @@ h2 {
 
 .names-grid {
   margin-top: 1rem;
+  /*
+   * One seat per row. Each seat carries a name field and a Human/Computer
+   * picker side by side, and in half of the sidecard's width the picker's own
+   * text squeezed the name field down to a sliver.
+   */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .field-label {
@@ -500,6 +506,45 @@ h2 {
 
 .names-grid .field-label input {
   margin-top: auto;
+}
+
+/*
+ * Each seat carries a name field and a Human/Computer picker on one row.
+ * `ai-` prefixed because this stylesheet is one flat namespace shared with the
+ * landing page — an unprefixed name here has already shipped a broken home page.
+ */
+.ai-seat-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  /* Pins the controls to the bottom of the cell so they line up across seats
+     however the label above them happens to wrap. */
+  margin-top: auto;
+}
+
+.names-grid .ai-seat .ai-seat-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.ai-seat .ai-seat-select {
+  flex: 0 0 auto;
+  width: auto;
+  padding-inline: 0.55rem;
+}
+
+.ai-badge {
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(142, 249, 255, 0.35);
+  background: rgba(142, 249, 255, 0.12);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  vertical-align: middle;
 }
 
 .seat-swatch {

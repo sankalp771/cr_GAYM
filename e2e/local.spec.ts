@@ -4,8 +4,24 @@ import { expect, test, type Page } from "@playwright/test";
 const cell = (page: Page, row: number, col: number) =>
   page.getByRole("button", { name: new RegExp(`^Row ${row + 1}, column ${col + 1}:`) });
 
+/**
+ * Hand every seat to a human.
+ *
+ * Seats default to one human and the rest computers, so a hot-seat test has to
+ * say so explicitly — otherwise a bot would take the moves these specs make on
+ * behalf of players 2 and up.
+ */
+async function setAllSeatsToHuman(page: Page) {
+  const controls = page.getByLabel(/^Player \d+ control$/);
+  const count = await controls.count();
+  for (let seat = 0; seat < count; seat += 1) {
+    await controls.nth(seat).selectOption("human");
+  }
+}
+
 async function startBattle(page: Page) {
   await page.goto("/local");
+  await setAllSeatsToHuman(page);
   await page.getByRole("button", { name: "Start Battle" }).first().click();
   await expect(page.getByRole("heading", { name: /controls the next move/ })).toBeVisible();
 }

@@ -6,6 +6,8 @@
  * single reviewable seam as multiplayer and AI start consuming it.
  */
 
+export { chooseGreedyMove } from "./ai";
+
 export {
   applyMove,
   checkWinner,
