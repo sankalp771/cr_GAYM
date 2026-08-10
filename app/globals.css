@@ -67,6 +67,48 @@ select {
   flex-direction: column;
 }
 
+/*
+ * The arena is pinned to exactly one viewport on desktop.
+ *
+ * `min-height: 100vh` alone leaves the shell's height *indefinite*, and a
+ * percentage height only resolves against a definite one — so `height: 100%` on
+ * the stage and `max-height: 100%` on the side columns both silently degraded to
+ * `auto`. The setup panel then grew with the seat count (525px at 2 players,
+ * 1116px at 8), dragged the whole row taller, and pushed the board off the
+ * bottom of the page. At 8 seats it also stopped being square, because the
+ * board's height came from its max-height while its width came from the column.
+ *
+ * Fixing the height here makes every percentage below resolve, so the side
+ * columns scroll internally instead of dictating the page height.
+ */
+@media (min-width: 981px) {
+  .mode-shell.arena-shell {
+    height: 100vh;
+  }
+}
+
+/*
+ * On a short laptop screen the header and match feed leave the board around
+ * 255px, which is playable but mean. Once a match is running the feed's kicker
+ * and prose are the first things worth trading for board size — the heading
+ * still says whose turn it is.
+ */
+@media (min-width: 981px) and (max-height: 820px) {
+  .mode-shell[data-phase="playing"] .stage-status {
+    padding: 0.6rem 0.9rem;
+  }
+
+  .mode-shell[data-phase="playing"] .stage-kicker,
+  .mode-shell[data-phase="playing"] .stage-copy p {
+    display: none;
+  }
+
+  .mode-shell[data-phase="playing"] .stage-copy h2 {
+    margin: 0;
+    font-size: 1.15rem;
+  }
+}
+
 .hero-card,
 .mode-header-card,
 .mode-card,
@@ -535,9 +577,14 @@ h2 {
   text-align: left;
   border-radius: 20px;
   border: 1px solid rgba(142, 249, 255, 0.18);
-  background: rgba(6, 12, 26, 0.97);
-  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(18px);
+  /*
+   * Fully opaque, not glass. At 97% the board and the Round Intel panel behind
+   * it still read through and competed with the options. A menu wants to be
+   * read, not admired — this also drops a backdrop-filter that was doing
+   * nothing but costing a compositing pass.
+   */
+  background: #070d1c;
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.6);
 }
 
 .settings-group {
@@ -759,9 +806,16 @@ h2 {
 }
 
 /* Side columns scroll independently so a long lineup cannot push the board down. */
+/*
+ * Side columns scroll inside themselves rather than setting the row height —
+ * eight seats of name fields must never be able to push the board off screen.
+ * `min-height: 0` is what actually lets a grid item shrink below its content.
+ */
 .board-stage > .arena-sidecard {
+  min-height: 0;
   max-height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .arena-sidecard {

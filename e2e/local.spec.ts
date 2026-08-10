@@ -196,6 +196,41 @@ test.describe("local arena", () => {
     expect(box!.y + box!.height).toBeLessThanOrEqual(viewportHeight + 1);
   });
 
+  test("the whole board stays on screen at every seat count", async ({ page }, testInfo) => {
+    // Regression: the setup column grew with the seat count — 525px at 2 seats,
+    // 1116px at 8 — and dragged the page taller, pushing the board off the
+    // bottom. The board also stopped being square at 8 seats. The cause was a
+    // shell with only `min-height`, leaving its height indefinite, so every
+    // percentage height below it silently resolved to `auto`.
+    for (const seats of [2, 4, 6, 8]) {
+      await page.goto("/local");
+      await page.getByLabel("Players").selectOption(String(seats));
+      await page.getByRole("button", { name: "Start Battle" }).first().click();
+      await expect(page.getByRole("heading", { name: /controls the next move/ })).toBeVisible();
+
+      const box = await page.locator(".board").boundingBox();
+      expect(box).not.toBeNull();
+
+      const where = `${seats} seats on ${testInfo.project.name}`;
+      expect(Math.abs(box!.width - box!.height), `board is not square with ${where}`).toBeLessThan(2);
+
+      const viewport = page.viewportSize();
+      if (viewport && viewport.width > 980) {
+        // Desktop pins the arena to one viewport: the board must fit entirely,
+        // and the page must not scroll to reach it.
+        expect(box!.y, `board starts above the viewport with ${where}`).toBeGreaterThanOrEqual(0);
+        expect(box!.y + box!.height, `board runs past the fold with ${where}`).toBeLessThanOrEqual(
+          viewport.height + 1
+        );
+
+        const pageScrolls = await page.evaluate(
+          () => document.documentElement.scrollHeight > document.documentElement.clientHeight + 1
+        );
+        expect(pageScrolls, `page scrolls vertically with ${where}`).toBe(false);
+      }
+    }
+  });
+
   test("turn countdown is shown and stat labels sit above their values", async ({ page }) => {
     await startBattle(page);
 

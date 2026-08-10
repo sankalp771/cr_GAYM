@@ -10,10 +10,10 @@ type SettingsMenuProps = {
   onDifficultyChange: (difficulty: AiDifficulty) => void;
 };
 
-const DIFFICULTY_COPY: Record<AiDifficulty, { label: string; hint: string }> = {
-  easy: { label: "Easy", hint: "Plays at random. A gentle introduction." },
-  normal: { label: "Normal", hint: "Plays well, but makes mistakes." },
-  hard: { label: "Hard", hint: "Always takes its best move." }
+const DIFFICULTY_LABEL: Record<AiDifficulty, string> = {
+  easy: "Easy",
+  normal: "Normal",
+  hard: "Hard"
 };
 
 /**
@@ -85,12 +85,10 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
                   onChange={() => onDifficultyChange(level)}
                 />
                 <span>
-                  <strong>{DIFFICULTY_COPY[level].label}</strong>
-                  <em>{DIFFICULTY_COPY[level].hint}</em>
+                  <strong>{DIFFICULTY_LABEL[level]}</strong>
                 </span>
               </label>
             ))}
-            <p className="settings-note">Applies from the computer&apos;s next move.</p>
           </fieldset>
 
           <fieldset className="settings-group">
@@ -99,7 +97,6 @@ export function SettingsMenu({ isMuted, onToggleMute, difficulty, onDifficultyCh
               <input type="checkbox" checked={!isMuted} onChange={onToggleMute} />
               <span>
                 <strong>Sound effects</strong>
-                <em>{isMuted ? "Currently muted." : "Placement, explosions and victory."}</em>
               </span>
             </label>
           </fieldset>
