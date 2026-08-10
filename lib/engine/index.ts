@@ -9,6 +9,9 @@
 export { AI_DIFFICULTIES, chooseAiMove, chooseGreedyMove, isAiDifficulty } from "./ai";
 export type { AiDifficulty } from "./ai";
 
+export { DEFAULT_MAX_NODES, MAX_SEARCH_DEPTH, chooseSearchMove, searchBestMove } from "./search";
+export type { SearchOptions, SearchResult } from "./search";
+
 export {
   applyMove,
   checkWinner,

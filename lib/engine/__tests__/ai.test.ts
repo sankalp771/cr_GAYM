@@ -297,10 +297,13 @@ describe("chooseGreedyMove — self play", () => {
 });
 
 describe("difficulty levels", () => {
-  it("recognises only the three known levels", () => {
-    expect(AI_DIFFICULTIES).toEqual(["easy", "normal", "hard"]);
+  it("recognises only the four known levels", () => {
+    // Order is the order the settings popover renders, so it is part of the
+    // contract rather than an implementation detail — the ladder must read
+    // weakest to strongest.
+    expect(AI_DIFFICULTIES).toEqual(["easy", "normal", "hard", "expert"]);
     for (const level of AI_DIFFICULTIES) expect(isAiDifficulty(level)).toBe(true);
-    for (const bogus of ["", "expert", "HARD", null, 3]) expect(isAiDifficulty(bogus)).toBe(false);
+    for (const bogus of ["", "insane", "HARD", null, 3]) expect(isAiDifficulty(bogus)).toBe(false);
   });
 
   it("only ever returns a legal move, at every level", () => {

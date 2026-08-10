@@ -46,6 +46,13 @@ test.describe("local — setup screen", () => {
     await settings.click();
     await expect(settings).toHaveAttribute("aria-expanded", "true");
 
+    // Four rungs, weakest first. Expert is the depth search; the other three are
+    // one heuristic at three honesties.
+    await expect(page.getByRole("radio")).toHaveCount(4);
+    for (const level of ["Easy", "Normal", "Hard", "Expert"]) {
+      await expect(page.getByRole("radio", { name: level })).toBeVisible();
+    }
+
     // Normal is the default: `hard` wins ~98% of games against random play,
     // which is no way to meet the game for the first time.
     await expect(page.getByRole("radio", { name: "Normal" })).toBeChecked();
@@ -143,6 +150,30 @@ test.describe("local — match screen", () => {
 
     expect(colors).toHaveLength(4);
     expect(new Set(colors).size, `expected 4 distinct colours, got ${colors.join(", ")}`).toBe(4);
+  });
+
+  test("an expert computer answers a human move", async ({ page }) => {
+    // The search is exercised hard in the unit suite; what this adds is the one
+    // thing Node cannot tell us — that it runs inside a real browser on the main
+    // thread without hanging the page. Seats default to one human and computers
+    // for the rest, so player 2 is already a bot.
+    await page.goto("/local");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("radio", { name: "Expert" }).check();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Start Battle" }).click();
+    await expect(board(page)).toBeVisible();
+    await expect(page.getByText("Player 1 to move")).toBeVisible();
+
+    await cell(page, 2, 2).click();
+
+    // The bot owning a cell is proof it moved; the turn indicator alone would
+    // flicker past too quickly to assert on reliably.
+    await expect(page.getByRole("button", { name: /owned by Player 2$/ }).first()).toBeVisible({
+      timeout: 15_000
+    });
+    await expect(page.getByText("Player 1 to move")).toBeVisible({ timeout: 15_000 });
   });
 
   test("leaving the match returns to setup", async ({ page }) => {
