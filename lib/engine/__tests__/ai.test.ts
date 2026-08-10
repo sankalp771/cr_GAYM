@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chooseGreedyMove } from "../ai";
+import { AI_DIFFICULTIES, chooseAiMove, chooseGreedyMove, isAiDifficulty } from "../ai";
+import type { AiDifficulty } from "../ai";
 import { applyMove, createInitialState, isLegalMove, pickAutoMove } from "../engine";
 import { countPlayerOrbs, criticalMass } from "../rules";
 import type { Board, GameState, GridConfig, Move, Player } from "../types";
@@ -292,5 +293,84 @@ describe("chooseGreedyMove — self play", () => {
     }
 
     expect(greedyWins, `greedy won only ${greedyWins} of ${rounds}`).toBeGreaterThan(rounds * 0.6);
+  });
+});
+
+describe("difficulty levels", () => {
+  it("recognises only the three known levels", () => {
+    expect(AI_DIFFICULTIES).toEqual(["easy", "normal", "hard"]);
+    for (const level of AI_DIFFICULTIES) expect(isAiDifficulty(level)).toBe(true);
+    for (const bogus of ["", "expert", "HARD", null, 3]) expect(isAiDifficulty(bogus)).toBe(false);
+  });
+
+  it("only ever returns a legal move, at every level", () => {
+    for (const level of AI_DIFFICULTIES) {
+      let state = newGame();
+      const random = makeRandom(17);
+
+      for (let turn = 0; turn < 40 && state.status === "playing"; turn += 1) {
+        const move = chooseAiMove(state, level, random);
+        if (!move) break;
+        expect(isLegalMove(state, move), `${level} produced an illegal move`).toBe(true);
+        state = applyMove(state, move).state;
+      }
+    }
+  });
+
+  it("is deterministic for a fixed seed at every level", () => {
+    for (const level of AI_DIFFICULTIES) {
+      const state = newGame();
+      expect(chooseAiMove(state, level, makeRandom(99))).toEqual(chooseAiMove(state, level, makeRandom(99)));
+    }
+  });
+
+  it("plays hard as pure greedy", () => {
+    // `hard` must never blunder, so it has to agree with the raw heuristic on
+    // every position — with the same seed, since both consume the rng.
+    let state = newGame();
+    const drive = makeRandom(5);
+
+    for (let turn = 0; turn < 25 && state.status === "playing"; turn += 1) {
+      expect(chooseAiMove(state, "hard", makeRandom(turn + 1))).toEqual(
+        chooseGreedyMove(state, makeRandom(turn + 1))
+      );
+      const move = chooseAiMove(state, "hard", drive);
+      if (!move) break;
+      state = applyMove(state, move).state;
+    }
+  });
+
+  it("orders the ladder: easy loses to normal, normal loses to hard", () => {
+    // A difficulty selector is only worth having if the levels differ in
+    // strength. Each level plays a series against `hard`; the win rates must
+    // come out strictly increasing.
+    const winRateVsHard = (level: AiDifficulty) => {
+      const games = 40;
+      let wins = 0;
+
+      for (let game = 0; game < games; game += 1) {
+        const random = makeRandom(game * 104_729 + 11);
+        const testedSeat = game % 2; // alternate who opens, cancelling that edge
+        let state = newGame();
+
+        while (state.status === "playing" && state.moveCount < 3000) {
+          const level_ = state.currentPlayerIndex === testedSeat ? level : "hard";
+          const move = chooseAiMove(state, level_, random);
+          if (!move) break;
+          state = applyMove(state, move).state;
+        }
+
+        if (state.winnerId === `p${testedSeat + 1}`) wins += 1;
+      }
+
+      return (wins / games) * 100;
+    };
+
+    const easy = winRateVsHard("easy");
+    const normal = winRateVsHard("normal");
+    console.log(`win rate against hard — easy ${easy.toFixed(1)}%, normal ${normal.toFixed(1)}%`);
+
+    expect(easy, "easy should not be beating hard").toBeLessThan(normal);
+    expect(normal, "normal should still lose to hard on balance").toBeLessThan(50);
   });
 });

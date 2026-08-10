@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   applyMove,
   BOARD_PRESETS,
-  chooseGreedyMove,
+  chooseAiMove,
   createEmptyBoard,
   createInitialState,
   criticalMass,
@@ -15,6 +15,7 @@ import {
   PLAYER_COLORS,
   pickAutoMove,
   TURN_SECONDS,
+  type AiDifficulty,
   type Board,
   type GameState,
   type GridConfig,
@@ -22,6 +23,8 @@ import {
   type PresetId
 } from "@/lib/engine";
 import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
+import { DEFAULT_DIFFICULTY, loadDifficulty, saveDifficulty } from "@/lib/preferences";
+import { SettingsMenu } from "@/components/settings-menu";
 
 type GamePhase = "setup" | "playing" | "finished";
 
@@ -186,9 +189,28 @@ export function LocalArena() {
   // be a hydration mismatch.
   const [isMuted, setIsMuted] = useState(false);
 
+  // Same reasoning as the mute preference: default on both server and client,
+  // then sync from storage after mount so the markup matches.
+  const [difficulty, setDifficulty] = useState<AiDifficulty>(DEFAULT_DIFFICULTY);
+
   useEffect(() => {
     setIsMuted(loadMutePreference());
+    setDifficulty(loadDifficulty());
   }, []);
+
+  /**
+   * The bot's move is dispatched from a timeout, so it must read the difficulty
+   * through a ref for the same reason it reads the game state through one — a
+   * value closed over when the turn started would be stale by the time the
+   * timeout fires, and changing difficulty mid-match would not take effect.
+   */
+  const difficultyRef = useRef<AiDifficulty>(DEFAULT_DIFFICULTY);
+  difficultyRef.current = difficulty;
+
+  function changeDifficulty(next: AiDifficulty) {
+    setDifficulty(next);
+    saveDifficulty(next);
+  }
 
   function toggleMute() {
     const next = !isMuted;
@@ -387,7 +409,7 @@ export function LocalArena() {
     if (!actingPlayer || !isComputerSeat(actingPlayer.id)) return;
     if (aiDispatchedForMoveRef.current === game.moveCount) return;
 
-    const move = chooseGreedyMove(game, Math.random);
+    const move = chooseAiMove(game, difficultyRef.current, Math.random);
     if (!move) return;
 
     aiDispatchedForMoveRef.current = game.moveCount;
@@ -516,16 +538,12 @@ export function LocalArena() {
 
         <motion.div className="header-actions" variants={staggerList} initial="initial" animate="animate">
           <Link href="/" className="ghost-link">Back Home</Link>
-          <button
-            className="ghost-link button-reset sound-toggle"
-            onClick={toggleMute}
-            type="button"
-            aria-pressed={isMuted}
-            aria-label={isMuted ? "Unmute sound effects" : "Mute sound effects"}
-          >
-            <span aria-hidden="true">{isMuted ? "🔇" : "🔊"}</span>
-            <span>{isMuted ? "Muted" : "Sound"}</span>
-          </button>
+          <SettingsMenu
+            isMuted={isMuted}
+            onToggleMute={toggleMute}
+            difficulty={difficulty}
+            onDifficultyChange={changeDifficulty}
+          />
           <button className="primary-link button-reset" onClick={startGame} type="button">Start Battle</button>
         </motion.div>
       </motion.section>

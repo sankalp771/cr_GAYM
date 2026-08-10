@@ -6,7 +6,8 @@
  * single reviewable seam as multiplayer and AI start consuming it.
  */
 
-export { chooseGreedyMove } from "./ai";
+export { AI_DIFFICULTIES, chooseAiMove, chooseGreedyMove, isAiDifficulty } from "./ai";
+export type { AiDifficulty } from "./ai";
 
 export {
   applyMove,

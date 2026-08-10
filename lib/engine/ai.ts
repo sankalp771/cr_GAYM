@@ -173,3 +173,67 @@ export function chooseGreedyMove(state: GameState, random: () => number): Move |
   const index = Math.min(best.length - 1, Math.floor(random() * best.length));
   return best[index];
 }
+
+/**
+ * Difficulty levels for a computer seat.
+ *
+ * The greedy heuristic wins about 98% of games against random play, which makes
+ * it a poor default for someone picking the game up. Rather than write three
+ * separate opponents, difficulty is expressed as how often the seat *declines*
+ * to play its best move and plays a random legal one instead. That gives a real
+ * curve out of one heuristic:
+ *
+ * - `easy` never plays the greedy move — it is the random auto-player, which is
+ *   the same thing a timed-out human turn does.
+ * - `normal` plays well most of the time and blunders often enough to be
+ *   beatable by someone learning the game.
+ * - `hard` is the greedy move every time.
+ *
+ * When a depth search lands it becomes a fourth level rather than replacing
+ * `hard`, so the difficulty a player has settled on keeps playing the same way.
+ */
+export type AiDifficulty = "easy" | "normal" | "hard";
+
+export const AI_DIFFICULTIES: readonly AiDifficulty[] = ["easy", "normal", "hard"];
+
+/** Probability of playing a random legal move instead of the best one. */
+const BLUNDER_CHANCE: Record<AiDifficulty, number> = {
+  easy: 1,
+  normal: 0.4,
+  hard: 0
+};
+
+export function isAiDifficulty(value: unknown): value is AiDifficulty {
+  return typeof value === "string" && (AI_DIFFICULTIES as readonly string[]).includes(value);
+}
+
+/**
+ * Choose a move for a computer seat at the given difficulty.
+ *
+ * Randomness is injected, so a seeded test gets the same game every run and a
+ * server could be the one rolling. Returns `null` when there is nothing to play.
+ */
+export function chooseAiMove(state: GameState, difficulty: AiDifficulty, random: () => number): Move | null {
+  if (state.status !== "playing") return null;
+
+  const current = state.players[state.currentPlayerIndex];
+  if (!current || current.isEliminated) return null;
+
+  const blunderChance = BLUNDER_CHANCE[difficulty];
+
+  // `hard` never blunders, so it skips the roll entirely rather than burning a
+  // draw on a decision it cannot act on. That keeps a real guarantee — at
+  // `hard`, this function IS `chooseGreedyMove`, same seed and same answer —
+  // which is asserted in the tests and is worth more than every level happening
+  // to consume the same number of random draws.
+  if (blunderChance === 0) return chooseGreedyMove(state, random);
+
+  if (random() < blunderChance) {
+    const candidates = getValidMoves(state.board, current.id);
+    if (candidates.length === 0) return null;
+    const index = Math.min(candidates.length - 1, Math.floor(random() * candidates.length));
+    return { playerId: current.id, row: candidates[index].row, col: candidates[index].col };
+  }
+
+  return chooseGreedyMove(state, random);
+}

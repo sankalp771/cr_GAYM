@@ -476,16 +476,135 @@ h2 {
   gap: 0.6rem;
 }
 
-.local-header-card .header-actions > * {
+/*
+ * The settings trigger is wrapped in a positioned .settings-menu, so it is no
+ * longer a direct child here — without naming it too, it kept .ghost-link's
+ * taller default, grew the header, and pushed the board back below the fold.
+ */
+.local-header-card .header-actions > *,
+.local-header-card .header-actions .settings-trigger {
   min-height: 2.9rem;
   padding: 0.6rem 1rem;
 }
 
-.sound-toggle {
+.local-header-card .header-actions .settings-menu {
+  padding: 0;
+}
+
+/*
+ * Settings popover. Prefixed `settings-` throughout — this stylesheet is one
+ * flat global namespace shared with the landing page, and an unprefixed class
+ * has already shipped a broken home page once.
+ */
+.settings-menu {
+  position: relative;
+}
+
+/*
+ * The shared card rule sets `overflow: hidden`, which clips the settings
+ * popover to the header. The card's ::after sheen inherits border-radius, so it
+ * stays inside the rounded corners without the clip.
+ */
+.local-header-card {
+  overflow: visible;
+  /*
+   * The arena layout is a later sibling, so it paints on top whatever z-index
+   * the panel gives itself inside this card's stacking context. Without lifting
+   * the card, the board frame sat over the lower half of the panel and swallowed
+   * clicks on the sound toggle while the difficulty radios above it still worked.
+   */
+  z-index: 40;
+}
+
+.settings-trigger {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
+}
+
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 30;
+  width: min(20rem, calc(100vw - 2.5rem));
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+  text-align: left;
+  border-radius: 20px;
+  border: 1px solid rgba(142, 249, 255, 0.18);
+  background: rgba(6, 12, 26, 0.97);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
+}
+
+.settings-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.settings-group legend {
+  padding: 0;
+  margin-bottom: 0.15rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.settings-option:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* The control keeps focus, so the ring has to be drawn on the row around it. */
+.settings-option:focus-within {
+  background: rgba(142, 249, 255, 0.08);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-option input {
+  margin-top: 0.22rem;
+  accent-color: var(--accent);
+  /* Comfortably above the 24px minimum for a touch target on a phone. */
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+.settings-option strong {
+  display: block;
+  font-weight: 600;
+}
+
+.settings-option em {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.settings-note {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .seat-label {

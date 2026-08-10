@@ -82,18 +82,70 @@ test.describe("local arena", () => {
     expect(sawBurst, "no explosion particles were rendered during the cascade").toBe(true);
   });
 
-  test("mute toggle flips its pressed state and persists", async ({ page }) => {
+  test("sound can be muted from settings and the choice persists", async ({ page }) => {
     await page.goto("/local");
 
-    const toggle = page.getByRole("button", { name: /sound effects$/ });
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Settings" }).click();
+    const sound = page.getByRole("checkbox", { name: /Sound effects/ });
+    await expect(sound).toBeChecked();
 
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await sound.uncheck();
+    await expect(sound).not.toBeChecked();
 
     // The preference is stored, so a reload keeps the choice.
     await page.reload();
-    await expect(page.getByRole("button", { name: /sound effects$/ })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("checkbox", { name: /Sound effects/ })).not.toBeChecked();
+  });
+
+  test("bot difficulty can be chosen from settings and persists", async ({ page }) => {
+    await page.goto("/local");
+
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.click();
+    await expect(settings).toHaveAttribute("aria-expanded", "true");
+
+    // Normal is the default: the greedy heuristic wins ~98% of games against
+    // random play, which is no way to meet the game for the first time.
+    await expect(page.getByRole("radio", { name: /Normal/ })).toBeChecked();
+
+    await page.getByRole("radio", { name: /Easy/ }).check();
+    await expect(page.getByRole("radio", { name: /Easy/ })).toBeChecked();
+
+    await page.reload();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("radio", { name: /Easy/ })).toBeChecked();
+  });
+
+  test("settings popover closes on Escape and returns focus to its trigger", async ({ page }) => {
+    await page.goto("/local");
+
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.click();
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Settings" })).toHaveCount(0);
+    // Focus must come back, or a keyboard user is stranded on a removed node.
+    await expect(settings).toBeFocused();
+  });
+
+  test("settings popover is not clipped by the header card", async ({ page }) => {
+    await page.goto("/local");
+    await page.getByRole("button", { name: "Settings" }).click();
+
+    // The shared card style sets overflow:hidden; the panel hangs below the
+    // header and would be cut in half without an explicit override.
+    const panel = await page.getByRole("dialog", { name: "Settings" }).boundingBox();
+    const header = await page.locator(".local-header-card").boundingBox();
+
+    expect(panel).not.toBeNull();
+    expect(header).not.toBeNull();
+    expect(panel!.height, "settings panel looks collapsed or clipped").toBeGreaterThan(180);
+    expect(
+      panel!.y + panel!.height,
+      "panel should extend past the header, proving it is not clipped"
+    ).toBeGreaterThan(header!.y + header!.height);
   });
 
   test("refuses to play onto an opponent's cell", async ({ page }) => {
