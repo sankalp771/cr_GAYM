@@ -46,18 +46,6 @@ export default function HomePage() {
         </div>
 
         <div className="landing-preview">
-          <div className="preview-hud">
-            <div className="preview-player preview-red">
-              <span>Player 1</span>
-              <strong>Charged</strong>
-            </div>
-            <div className="preview-timer">12</div>
-            <div className="preview-player preview-blue">
-              <span>Player 2</span>
-              <strong>Responding</strong>
-            </div>
-          </div>
-
           <div className="preview-board-frame">
             <div className="preview-board">
               {Array.from({ length: 36 }, (_, index) => {

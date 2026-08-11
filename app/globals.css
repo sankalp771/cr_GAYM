@@ -259,59 +259,10 @@ h2 {
   gap: 1rem;
 }
 
-.preview-hud {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px minmax(0, 1fr);
-  gap: 0.8rem;
-  align-items: center;
-}
-
-.preview-player,
-.preview-timer,
 .preview-board-frame {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(5, 10, 24, 0.72);
   box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.03);
-}
-
-.preview-player {
-  padding: 0.9rem 1rem;
-  border-radius: 18px;
-}
-
-.preview-player span,
-.preview-player strong {
-  display: block;
-}
-
-.preview-player strong {
-  margin-top: 0.2rem;
-}
-
-.preview-red {
-  border-color: rgba(255, 91, 138, 0.38);
-  box-shadow: inset 0 0 22px rgba(255, 91, 138, 0.1), 0 0 24px rgba(255, 91, 138, 0.12);
-}
-
-.preview-blue {
-  border-color: rgba(96, 169, 255, 0.38);
-  box-shadow: inset 0 0 22px rgba(96, 169, 255, 0.1), 0 0 24px rgba(96, 169, 255, 0.12);
-}
-
-.preview-timer {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 1;
-  border-radius: 999px;
-  font-size: clamp(1.8rem, 4vw, 3rem);
-  font-weight: 800;
-  border-color: rgba(255, 163, 53, 0.45);
-  box-shadow:
-    inset 0 0 22px rgba(255, 169, 45, 0.16),
-    0 0 28px rgba(255, 159, 68, 0.18);
-}
-
-.preview-board-frame {
   border-radius: 26px;
   padding: 1rem;
 }
@@ -440,8 +391,7 @@ h2 {
 @media (max-width: 980px) {
   .mode-header-card,
   .multiplayer-grid,
-  .landing-hero,
-  .preview-hud {
+  .landing-hero {
     grid-template-columns: 1fr;
   }
 }
