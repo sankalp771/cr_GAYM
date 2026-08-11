@@ -63,6 +63,10 @@ export function MatchScreen({
 }: MatchScreenProps) {
   const turnColor = currentPlayer?.color ?? "#8ef9ff";
   const isFinished = game.status === "finished";
+  // Once the match is decided the display board is running the cosmetic finale,
+  // which empties every cell as it detonates. The standings have to come from the
+  // real final board or every seat would tick down to zero on the way out.
+  const tallyBoard = isFinished ? game.board : displayBoard;
   const secondsLeft = Math.ceil(timerRemainingMs / 1000);
   const winner = game.players.find((player) => player.id === game.winnerId) ?? null;
 
@@ -200,7 +204,7 @@ export function MatchScreen({
                         CPU
                       </span>
                     ) : null}
-                    <span className={styles.playerOrbs}>{countOrbs(displayBoard, player.id)}</span>
+                    <span className={styles.playerOrbs}>{countOrbs(tallyBoard, player.id)}</span>
                   </div>
                 );
               })}
