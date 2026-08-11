@@ -114,6 +114,33 @@ Suggested event families:
 - reactions
 - reconnect/resume
 
+## Transport Decision — PartyKit (implemented 2026-08-11)
+
+Socket.IO, named above, was never viable on this hosting: Vercel serverless
+functions cannot hold a persistent WebSocket. Realtime therefore cannot live in
+the Next app at all, which invalidated the original plan before any code existed.
+
+**PartyKit** (Cloudflare) was chosen over a standalone socket server on Railway or
+Fly. Turn-based rooms hibernate between moves and are billed nothing while a
+lobby waits; an always-on instance costs the same at 3am with nobody playing, and
+needs Redis as soon as it scales past one node. PartyKit's room-per-id model is
+also already the isolation this document asks for under "Scaling Path".
+
+Two deviations from the sketch below, both deliberate:
+
+- **`session.restore` is a connect-time query parameter, not a message.** PartyKit
+  hands the server the request URL at connect, so identity is known before the
+  first frame. A round trip would leave the connection briefly unidentified for
+  no benefit.
+- **The suggested `apps/web` + `apps/server` monorepo was not created.** Its goal
+  was to keep gameplay logic portable and avoid duplication between frontend and
+  backend. `lib/engine/` is already a pure, framework-free module, and
+  `party/room.ts` imports it directly — the same rules run in both places from
+  one copy, which is the outcome the split was for.
+
+Everything else — the envelope shape, the event names, the room flow, the data
+model, the timeout and reconnect strategies — is implemented as written.
+
 ## Initial WebSocket Contract
 
 The first multiplayer implementation may use native WebSockets with JSON messages to avoid dependency overhead.

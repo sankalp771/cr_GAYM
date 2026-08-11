@@ -19,6 +19,15 @@ import {
   type Player,
   type PresetId
 } from "@/lib/engine";
+import {
+  cellKey,
+  EMPTY_FLASH,
+  framesToSteps,
+  MIN_STEP_MS,
+  stepDurations,
+  type AnimationStep,
+  type FlashSet
+} from "@/lib/cascade-animation";
 import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
 import { DEFAULT_DIFFICULTY, loadDifficulty, saveDifficulty } from "@/lib/preferences";
 import { SetupScreen, type SeatKind } from "@/components/local/setup-screen";
@@ -41,43 +50,9 @@ function defaultSeatKinds(count: number, previous: SeatKind[] = []): SeatKind[] 
   return Array.from({ length: count }, (_, index) => previous[index] ?? (index === 0 ? "human" : "computer"));
 }
 
-type FlashSet = ReadonlySet<string>;
-
-type AnimationStep = {
-  board: Board;
-  flash: FlashSet;
-  /** Cells that exploded on this step — these get the particle burst. */
-  burst: FlashSet;
-  exploded: boolean;
-};
-
-const EMPTY_FLASH: FlashSet = new Set<string>();
-
-/**
- * Cascade pacing. A fixed step made short reactions sluggish and long ones
- * interminable, so the reaction gets a rough budget and the step shrinks as it
- * lengthens, easing out so the opening steps read before it accelerates.
- */
-const CASCADE_BUDGET_MS = 2200;
-const MAX_STEP_MS = 165;
-const MIN_STEP_MS = 45;
-
 /** Budgets for the two waves of the end-of-match finale. See `buildVictoryFinale`. */
 const FINALE_CLAIM_BUDGET_MS = 900;
 const FINALE_BLAST_BUDGET_MS = 1300;
-
-function stepDurations(count: number, budgetMs = CASCADE_BUDGET_MS): number[] {
-  if (count <= 0) return [];
-
-  const flat = Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, budgetMs / count));
-
-  return Array.from({ length: count }, (_, index) => {
-    const progress = count === 1 ? 0 : index / (count - 1);
-    return Math.max(MIN_STEP_MS, flat * (1.25 - 0.5 * progress));
-  });
-}
-
-const cellKey = (row: number, col: number) => `${row},${col}`;
 
 function configForPreset(presetId: PresetId): GridConfig {
   const { size } = BOARD_PRESETS[presetId];
@@ -306,16 +281,7 @@ export function LocalArena() {
       playSound("place");
       vibrate(8);
 
-      const steps: AnimationStep[] = result.frames.map((frame) => ({
-        board: frame.board,
-        flash: new Set([
-          ...frame.exploded.map((cell) => cellKey(cell.row, cell.col)),
-          ...frame.received.map((cell) => cellKey(cell.row, cell.col))
-        ]),
-        burst: new Set(frame.exploded.map((cell) => cellKey(cell.row, cell.col))),
-        exploded: frame.exploded.length > 0
-      }));
-
+      const steps = framesToSteps(result.frames);
       await playFrames(steps, stepDurations(steps.length));
 
       setGame(result.state);
@@ -537,13 +503,13 @@ export function LocalArena() {
       statusText={statusText}
       timerRemainingMs={timerRemainingMs}
       isResolving={isResolving}
-      isComputerSeat={isComputerSeat}
+      seatBadge={(playerId) => (isComputerSeat(playerId) ? "CPU" : null)}
       onCellClick={(row, col) => void runMove(row, col, "human")}
       onLeave={backToSetup}
       showWinnerModal={showWinnerModal}
       onDismissWinner={() => setShowWinnerModal(false)}
       onRematch={startGame}
-      {...settings}
+      settings={settings}
     />
   );
 }

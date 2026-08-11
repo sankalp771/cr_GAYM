@@ -8,7 +8,7 @@ import styles from "./match-screen.module.css";
 /** Particles per exploding cell — one per neighbour the orbs travel to. */
 const BURST_DIRECTIONS = [0, 1, 2, 3];
 
-type MatchScreenProps = SettingsMenuProps & {
+type MatchScreenProps = {
   game: GameState;
   displayBoard: Board;
   flashCells: ReadonlySet<string>;
@@ -18,12 +18,31 @@ type MatchScreenProps = SettingsMenuProps & {
   statusText: string;
   timerRemainingMs: number;
   isResolving: boolean;
-  isComputerSeat: (playerId: string) => boolean;
   onCellClick: (row: number, col: number) => void;
   onLeave: () => void;
   showWinnerModal: boolean;
   onDismissWinner: () => void;
   onRematch: () => void;
+
+  /**
+   * The screen is shared by local and multiplayer, and the differences between
+   * them are all optional. Everything below defaults to how local mode behaves,
+   * so that call site is unchanged.
+   */
+  settings?: SettingsMenuProps;
+  /**
+   * Whether this client may act at all. Local hot-seat is always true — whoever
+   * is at the keyboard owns the turn. Online it is false on someone else's turn,
+   * so their board is visibly not yours to touch.
+   */
+  canAct?: boolean;
+  /** Short tag beside a seat: "CPU" locally, connection state online. */
+  seatBadge?: (playerId: string) => string | null;
+  turnLabel?: string;
+  leaveLabel?: string;
+  rematchLabel?: string;
+  /** Online only the host may restart, so the button is hidden for everyone else. */
+  canRematch?: boolean;
 };
 
 const cellKey = (row: number, col: number) => `${row},${col}`;
@@ -53,13 +72,18 @@ export function MatchScreen({
   statusText,
   timerRemainingMs,
   isResolving,
-  isComputerSeat,
   onCellClick,
   onLeave,
   showWinnerModal,
   onDismissWinner,
   onRematch,
-  ...settings
+  settings,
+  canAct = true,
+  seatBadge,
+  turnLabel,
+  leaveLabel = "Leave match",
+  rematchLabel = "Rematch",
+  canRematch = true
 }: MatchScreenProps) {
   const turnColor = currentPlayer?.color ?? "#8ef9ff";
   const isFinished = game.status === "finished";
@@ -76,7 +100,7 @@ export function MatchScreen({
         <div className={styles.turn}>
           <span className={styles.turnDot} />
           <span className={styles.turnName}>
-            {isFinished ? "Match over" : `${currentPlayer?.name ?? "Player"} to move`}
+            {isFinished ? "Match over" : (turnLabel ?? `${currentPlayer?.name ?? "Player"} to move`)}
           </span>
           {!isFinished ? <span className={styles.turnClock}>{secondsLeft}s</span> : null}
         </div>
@@ -87,9 +111,9 @@ export function MatchScreen({
             type="button"
             onClick={onLeave}
           >
-            Leave match
+            {leaveLabel}
           </button>
-          <SettingsMenu {...settings} compact />
+          {settings ? <SettingsMenu {...settings} compact /> : null}
         </div>
       </div>
 
@@ -103,7 +127,7 @@ export function MatchScreen({
             {displayBoard.flat().map((cell) => {
               const owner = game.players.find((player) => player.id === cell.ownerId) ?? null;
               const playable =
-                !isFinished && !isResolving && currentPlayer
+                canAct && !isFinished && !isResolving && currentPlayer
                   ? cell.ownerId === null || cell.ownerId === currentPlayer.id
                   : false;
               const isCritical =
@@ -199,9 +223,9 @@ export function MatchScreen({
                   >
                     <span className={styles.playerDot} data-testid="player-dot" />
                     <span className={styles.playerName}>{player.name}</span>
-                    {isComputerSeat(player.id) ? (
+                    {seatBadge?.(player.id) ? (
                       <span className={styles.cpuTag} data-testid="cpu-tag">
-                        CPU
+                        {seatBadge(player.id)}
                       </span>
                     ) : null}
                     <span className={styles.playerOrbs}>{countOrbs(tallyBoard, player.id)}</span>
@@ -223,11 +247,13 @@ export function MatchScreen({
             </h2>
             <p className={styles.modalCopy}>They controlled the final chain reaction.</p>
             <div className={styles.modalActions}>
-              <button className="primary-link button-reset" type="button" onClick={onRematch}>
-                Rematch
-              </button>
+              {canRematch ? (
+                <button className="primary-link button-reset" type="button" onClick={onRematch}>
+                  {rematchLabel}
+                </button>
+              ) : null}
               <button className="ghost-link button-reset" type="button" onClick={onLeave}>
-                Change setup
+                {settings ? "Change setup" : "Leave room"}
               </button>
             </div>
           </div>

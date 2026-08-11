@@ -185,6 +185,64 @@ Two things in `components/local-arena.tsx` are load-bearing:
   reaches its handler through a ref (stale-closure trap, same as the turn timer)
   and latches on `moveCount` so it cannot play twice for one turn.
 
+## Multiplayer
+
+`/multiplayer` is real. Rooms run on **PartyKit** (Cloudflare), in `party/room.ts`,
+one instance per room code.
+
+PartyKit was chosen because Vercel serverless functions cannot hold a persistent
+WebSocket, so realtime could never live inside the Next app. Against a socket
+server on Railway or Fly: turn-based rooms hibernate while waiting for a move and
+cost nothing, whereas an always-on box costs the same at 3am with nobody playing
+and needs Redis the moment it scales past one node.
+
+```bash
+npm run dev          # the Next app
+npm run dev:party    # the room server, on :1999 — both are needed
+npm run deploy:party # ships the room server (needs a Cloudflare account)
+```
+
+`NEXT_PUBLIC_PARTYKIT_HOST` points the browser at a deployed room server. Unset,
+it falls back to `127.0.0.1:1999`, which is also the port the Playwright suite
+starts one on — so an untouched `npm run build` is testable without env plumbing.
+
+### The rules run on the server, and that is the whole point
+
+`party/room.ts` imports `lib/engine` directly and calls the same `applyMove` the
+browser does. The purity rule exists *for* this: one copy of the rules, so a
+client cannot disagree with the server about what a move did. Both things the
+engine refuses to touch are injected in the server — `Math.random` for auto-play,
+the wall clock for turn deadlines.
+
+The client holds **no authority**. It sends move intents and renders snapshots.
+Whether you may sit, start, or play a given cell is decided in `party/room.ts`.
+
+**Cascade frames are never sent.** A resolved move can be hundreds of full board
+clones. The server broadcasts the move and the resulting state; the client
+replays that move through its own engine to generate identical frames, then
+reconciles. If its board is not exactly one move behind, it snaps to the
+authoritative state instead of animating — see `advanceTo` in `use-room.ts`.
+This only works because the engine is deterministic. **Do not add non-determinism
+to the engine, or online play will desync rather than merely misbehave.**
+
+### Details that are load-bearing
+
+- **Seats key on a session token, not the socket.** The token lives in
+  `localStorage` and is passed as a connect query parameter, so a refresh or a
+  dropped connection returns you to the same seat. In the lobby a seat is freed
+  after a short grace period; in a match it is never freed — the turn timer
+  auto-plays so one person's wifi cannot stall everyone.
+- **The room code is in the URL.** That makes a room a shareable link and is what
+  makes reload-rejoins work.
+- **`match.move` carries the mover's `moveCount`** and the server drops anything
+  that does not match, so a double tap, or a move sent as the timer auto-played,
+  is ignored rather than played twice.
+- **Joining an unknown code is an error, not a new room.** PartyKit creates a room
+  on connect, so without this a typo puts you in a lobby nobody is ever joining.
+- `components/local/match-screen.tsx` is shared by both modes. Its multiplayer
+  differences are optional props (`canAct`, `seatBadge`, `settings`, …) that
+  default to local behaviour, so there is one board and one animation path.
+
 ## Tailwind v4
 
 v4 is CSS-first. There is **no `tailwind.config.js`** and adding one is the wrong
@@ -246,17 +304,15 @@ mid-range Android.
   modifier, stretched those cells to fill `.hero-card`, and shipped a broken home
   page to production. Prefix new classes (`.orb-burst`, not `.burst`) and grep
   before naming.
-- Start multiplayer work beyond the agreed transport (see below)
+- Move authority for a gameplay rule into the client. The room server decides;
+  the browser draws (see below)
 
 ## Open decisions
 
-**Multiplayer transport: PartyKit.** Vercel serverless functions cannot hold
-persistent WebSocket connections, so realtime cannot live in the Next app.
-PartyKit (now Cloudflare, deployed to your own account) was chosen over a
-separate socket server on Railway/Fly: turn-based rooms hibernate while waiting
-for a move and are billed nothing, whereas an always-on instance costs the same
-at 3am with nobody playing and needs Redis the moment it scales past one node.
-Needs a Cloudflare account before that work starts.
+**Multiplayer deploy: pending a Cloudflare account.** The code is built and runs
+locally; `npm run deploy:party` is the only step left and it needs an account to
+deploy into. Until then `/multiplayer` works against `npm run dev:party` and
+against the Playwright suite, and nothing else is blocked on it.
 
 **Next 16 upgrade: pending.** Blocked behind one accepted advisory — `sharp`
 0.34.5 carries inherited libvips CVEs and cannot be overridden without Next 16.
