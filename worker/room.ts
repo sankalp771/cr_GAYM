@@ -1,33 +1,36 @@
 /**
- * Authoritative Chain Reaction room.
+ * Authoritative Chain Reaction room, as a Cloudflare Durable Object.
  *
- * One instance per room code, running on PartyKit. The client never owns game
- * state: it sends move *intents* and renders what comes back. `docs/ARCHITECTURE.md`
- * calls for a server-authoritative design and this is it.
+ * One instance per room code, guaranteed globally by the platform — which is the
+ * whole reason a room can hold its state in memory and two players can be sure
+ * they are talking to the same one.
+ *
+ * ## Why this is not PartyKit
+ *
+ * It was, briefly. PartyKit could not deploy: its shared `partykit.dev` zone has
+ * hit Cloudflare's 10,000-custom-domains-per-zone ceiling, and deploying to a
+ * private account fails too, because a free Cloudflare plan only permits
+ * SQLite-backed Durable Objects (`new_sqlite_classes`) and no published PartyKit
+ * build — latest or beta — emits that migration. The wrapper was one layer over
+ * exactly this class, so it was removed rather than paid around.
  *
  * ## Why this can import the game engine directly
  *
  * `lib/engine/` is pure — no React, no DOM, no `Date.now()`, no `Math.random()`,
  * enforced in `eslint.config.mjs`. That rule exists precisely so this file can
  * exist: the rules run here and in the browser from one copy, so a server and a
- * client cannot disagree about what a move does. The architecture doc's
- * suggested `packages/game-engine` split was aiming at the same thing; a pure
- * module inside the app achieves it without a monorepo.
- *
- * Both sources of non-determinism the engine refuses to touch are injected right
- * here, on the server, which is where the doc says they belong: `Math.random`
- * for auto-play selection, and the wall clock for turn deadlines.
+ * client cannot disagree about what a move did. Both things the engine refuses to
+ * touch are injected right here — `Math.random` for auto-play selection, and the
+ * wall clock for turn deadlines.
  *
  * ## Why the client is not sent cascade frames
  *
  * A resolved move can produce hundreds of animation frames, each a full board
- * clone — megabytes on a 14x14 board. It is never sent. The client is sent the
- * move and the resulting state, replays the move through its own copy of the
- * engine to generate identical frames, and reconciles against the authoritative
- * state afterwards. Determinism is what makes that safe.
+ * clone. The client is sent the move and the resulting state, replays the move
+ * through its own engine to generate identical frames, and reconciles afterwards.
+ * Determinism is what makes that safe.
  */
 
-import type * as Party from "partykit/server";
 import {
   applyMove,
   BOARD_PRESETS,
@@ -57,16 +60,17 @@ import {
   type ServerMessage
 } from "../lib/multiplayer/protocol";
 
+export type Env = { ROOMS: DurableObjectNamespace };
+
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
 
 /**
  * Grace period before a disconnected player loses their lobby seat.
  *
- * A page refresh drops the socket and opens a new one, and taking the seat away
- * in between would make refreshing feel like being kicked. In a running match
- * the seat is never freed at all — the match keeps going and auto-plays for them
- * until they return.
+ * A refresh drops the socket and opens a new one, and taking the seat away in
+ * between would make refreshing feel like being kicked. In a running match the
+ * seat is never freed at all — the match keeps going and auto-plays for them.
  */
 const LOBBY_DISCONNECT_GRACE_MS = 10_000;
 
@@ -79,6 +83,8 @@ type SeatedPlayer = {
   connections: Set<string>;
   dropTimer: ReturnType<typeof setTimeout> | null;
 };
+
+type Client = { id: string; socket: WebSocket };
 
 function defaultSettings(): RoomSettings {
   const preset = BOARD_PRESETS.classic;
@@ -96,15 +102,14 @@ function clampCapacity(value: number, floor: number): number {
   return Math.min(MAX_PLAYERS, Math.max(Math.max(MIN_PLAYERS, floor), Math.round(value)));
 }
 
-export default class ChainReactionRoom implements Party.Server {
-  /** Hibernate between turns: a lobby waiting for a fourth player should cost nothing. */
-  static options = { hibernate: true };
-
+export class ChainReactionRoom {
+  private clients = new Map<string, Client>();
   private players = new Map<string, SeatedPlayer>();
   /** Session token -> playerId. The token is never broadcast; the id is. */
   private tokens = new Map<string, string>();
   private connections = new Map<string, string>();
 
+  private roomCode = "";
   private hostPlayerId: string | null = null;
   private status: RoomStatus = "lobby";
   private settings: RoomSettings = defaultSettings();
@@ -114,75 +119,87 @@ export default class ChainReactionRoom implements Party.Server {
   private turnDeadline = 0;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(readonly room: Party.Room) {}
+  constructor(readonly state: DurableObjectState) {}
 
-  /**
-   * Plain HTTP view of a room.
-   *
-   * Enough for a load balancer or an uptime check to see the server is alive,
-   * and it is what the Playwright suite polls before it starts driving browsers.
-   * Deliberately says nothing about the board — it is unauthenticated.
-   */
-  onRequest() {
-    return new Response(
-      JSON.stringify({
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    // The object is addressed by name, but does not otherwise learn what that
+    // name was, so the router passes it along.
+    this.roomCode = url.searchParams.get("room") ?? this.roomCode;
+
+    if (request.headers.get("Upgrade") !== "websocket") {
+      // Plain HTTP view: enough for an uptime check, and what the Playwright
+      // suite polls before it drives browsers. Says nothing about the board.
+      return Response.json({
         ok: true,
         protocolVersion: PROTOCOL_VERSION,
-        room: this.room.id,
+        room: this.roomCode,
         status: this.status,
         players: this.players.size,
         capacity: this.settings.maxPlayers
-      }),
-      { headers: { "content-type": "application/json" } }
-    );
+      });
+    }
+
+    const token = url.searchParams.get("token");
+    if (!token) return new Response("Missing session token.", { status: 400 });
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+
+    const connectionId = crypto.randomUUID();
+    this.clients.set(connectionId, { id: connectionId, socket: server });
+
+    server.addEventListener("message", (event: MessageEvent) => {
+      if (typeof event.data === "string") this.onMessage(event.data, connectionId);
+    });
+    const drop = () => this.dropConnection(connectionId);
+    server.addEventListener("close", drop);
+    server.addEventListener("error", drop);
+
+    this.onConnect(connectionId, token);
+
+    return new Response(null, { status: 101, webSocket: client });
   }
 
   /* ---------------- connection lifecycle ---------------- */
 
-  onConnect(connection: Party.Connection, context: Party.ConnectionContext) {
-    const token = new URL(context.request.url).searchParams.get("token");
-    if (!token) {
-      this.sendError(connection, "bad_request", "Missing session token.");
-      connection.close();
-      return;
-    }
-
+  private onConnect(connectionId: string, token: string) {
     const existingId = this.tokens.get(token);
     const playerId = existingId ?? crypto.randomUUID();
     if (!existingId) this.tokens.set(token, playerId);
-    this.connections.set(connection.id, playerId);
+    this.connections.set(connectionId, playerId);
 
     // A returning player keeps their seat, their colour and their orbs.
     const seated = this.players.get(playerId);
     if (seated) {
-      seated.connections.add(connection.id);
+      seated.connections.add(connectionId);
       if (seated.dropTimer) {
         clearTimeout(seated.dropTimer);
         seated.dropTimer = null;
       }
     }
 
-    this.send(connection, {
+    this.sendTo(connectionId, {
       type: "session.ready",
       payload: { playerId, protocolVersion: PROTOCOL_VERSION }
     });
 
-    // An unseated connection still gets the snapshot, so the join screen can show
+    // An unseated connection still gets the snapshot, so a join screen can show
     // who is already waiting before committing to a seat.
-    this.send(connection, { type: "room.snapshot", payload: { room: this.roomSnapshot() } });
-    if (seated && this.game) this.send(connection, this.matchMessage("match.started"));
+    this.sendTo(connectionId, { type: "room.snapshot", payload: { room: this.roomSnapshot() } });
+    if (seated && this.game) {
+      this.sendTo(connectionId, {
+        type: "match.started",
+        payload: { room: this.roomSnapshot(), match: this.matchSnapshot() }
+      });
+    }
     if (seated) this.broadcastRoom();
   }
 
-  onClose(connection: Party.Connection) {
-    this.dropConnection(connection.id);
-  }
-
-  onError(connection: Party.Connection) {
-    this.dropConnection(connection.id);
-  }
-
   private dropConnection(connectionId: string) {
+    this.clients.delete(connectionId);
     const playerId = this.connections.get(connectionId);
     this.connections.delete(connectionId);
     if (!playerId) return;
@@ -193,8 +210,8 @@ export default class ChainReactionRoom implements Party.Server {
     seated.connections.delete(connectionId);
     if (seated.connections.size > 0) return;
 
-    // In a match the seat is held indefinitely — the turn timer auto-plays for
-    // them, so the match never stalls on somebody's flaky wifi.
+    // In a match the seat is held indefinitely — the turn timer auto-plays, so
+    // the match never stalls on somebody's flaky wifi.
     if (this.status === "in_match") {
       this.broadcastRoom();
       return;
@@ -216,7 +233,7 @@ export default class ChainReactionRoom implements Party.Server {
     this.players.delete(playerId);
 
     if (this.hostPlayerId === playerId) {
-      // The longest-seated survivor takes over rather than the room dying with them.
+      // The longest-seated survivor takes over rather than the room dying.
       const next = [...this.players.values()].sort((a, b) => a.seatIndex - b.seatIndex)[0];
       this.hostPlayerId = next?.playerId ?? null;
       if (next) next.isReady = false;
@@ -236,44 +253,44 @@ export default class ChainReactionRoom implements Party.Server {
 
   /* ---------------- messages ---------------- */
 
-  onMessage(raw: string, sender: Party.Connection) {
+  private onMessage(raw: string, connectionId: string) {
     const message = decode<ClientMessage>(raw);
-    if (!message) {
-      this.sendError(sender, "bad_request", "Unreadable message.");
-      return;
-    }
+    if (!message) return this.sendError(connectionId, "bad_request", "Unreadable message.");
 
-    const playerId = this.connections.get(sender.id);
-    if (!playerId) {
-      this.sendError(sender, "bad_request", "Unknown session.");
-      return;
-    }
+    const playerId = this.connections.get(connectionId);
+    if (!playerId) return this.sendError(connectionId, "bad_request", "Unknown session.");
 
     switch (message.type) {
       case "room.create":
-        return this.handleSeat(sender, playerId, message.payload.displayName, message.payload.settings, true);
+        return this.handleSeat(
+          connectionId,
+          playerId,
+          message.payload.displayName,
+          message.payload.settings,
+          true
+        );
       case "room.join":
-        return this.handleSeat(sender, playerId, message.payload.displayName, undefined, false);
+        return this.handleSeat(connectionId, playerId, message.payload.displayName, undefined, false);
       case "room.leave":
         this.removePlayer(playerId);
         return this.broadcastRoom();
       case "room.settings":
-        return this.handleSettings(sender, playerId, message.payload.settings);
+        return this.handleSettings(connectionId, playerId, message.payload.settings);
       case "room.ready":
-        return this.handleReady(sender, playerId, message.payload.isReady);
+        return this.handleReady(connectionId, playerId, message.payload.isReady);
       case "room.start":
-        return this.handleStart(sender, playerId);
+        return this.handleStart(connectionId, playerId);
       case "room.rematch":
-        return this.handleRematch(sender, playerId);
+        return this.handleRematch(connectionId, playerId);
       case "match.move":
-        return this.handleMove(sender, playerId, message.payload);
+        return this.handleMove(connectionId, playerId, message.payload);
       default:
-        return this.sendError(sender, "bad_request", "Unsupported message.");
+        return this.sendError(connectionId, "bad_request", "Unsupported message.");
     }
   }
 
   private handleSeat(
-    sender: Party.Connection,
+    connectionId: string,
     playerId: string,
     displayName: string,
     settings: Partial<RoomSettings> | undefined,
@@ -287,30 +304,29 @@ export default class ChainReactionRoom implements Party.Server {
     }
 
     if (isCreate && this.players.size > 0) {
-      return this.sendError(sender, "bad_request", "That room code is already in use.");
+      return this.sendError(connectionId, "bad_request", "That room code is already in use.");
     }
     // Joining an empty room would silently create one, so a mistyped code would
     // strand the player in a lobby nobody else is ever coming to.
     if (!isCreate && this.players.size === 0) {
-      return this.sendError(sender, "room_not_found", "No room with that code.");
+      return this.sendError(connectionId, "room_not_found", "No room with that code.");
     }
     if (this.status !== "lobby") {
-      return this.sendError(sender, "match_in_progress", "That match has already started.");
+      return this.sendError(connectionId, "match_in_progress", "That match has already started.");
     }
     if (this.players.size >= this.settings.maxPlayers) {
-      return this.sendError(sender, "room_full", "That room is full.");
+      return this.sendError(connectionId, "room_full", "That room is full.");
     }
 
     const seatIndex = this.lowestFreeSeat();
-    const seated: SeatedPlayer = {
+    this.players.set(playerId, {
       playerId,
       displayName: normalizeDisplayName(displayName, seatIndex),
       seatIndex,
       isReady: false,
-      connections: new Set([sender.id]),
+      connections: new Set([connectionId]),
       dropTimer: null
-    };
-    this.players.set(playerId, seated);
+    });
 
     if (this.hostPlayerId === null) this.hostPlayerId = playerId;
     if (isCreate && settings) this.applySettings(settings);
@@ -337,9 +353,13 @@ export default class ChainReactionRoom implements Party.Server {
     }
   }
 
-  private handleSettings(sender: Party.Connection, playerId: string, settings: Partial<RoomSettings>) {
-    if (playerId !== this.hostPlayerId) return this.sendError(sender, "not_host", "Only the host can change setup.");
-    if (this.status !== "lobby") return this.sendError(sender, "match_in_progress", "The match has started.");
+  private handleSettings(connectionId: string, playerId: string, settings: Partial<RoomSettings>) {
+    if (playerId !== this.hostPlayerId) {
+      return this.sendError(connectionId, "not_host", "Only the host can change setup.");
+    }
+    if (this.status !== "lobby") {
+      return this.sendError(connectionId, "match_in_progress", "The match has started.");
+    }
 
     this.applySettings(settings);
     // Capacity changes move the goalposts for starting, so stale ready flags
@@ -348,9 +368,9 @@ export default class ChainReactionRoom implements Party.Server {
     this.broadcastRoom();
   }
 
-  private handleReady(sender: Party.Connection, playerId: string, isReady: boolean) {
+  private handleReady(connectionId: string, playerId: string, isReady: boolean) {
     const seated = this.players.get(playerId);
-    if (!seated) return this.sendError(sender, "not_seated", "You are not in this room.");
+    if (!seated) return this.sendError(connectionId, "not_seated", "You are not in this room.");
     if (playerId === this.hostPlayerId) return; // the host has no ready state
     seated.isReady = isReady;
     this.broadcastRoom();
@@ -361,20 +381,26 @@ export default class ChainReactionRoom implements Party.Server {
     // The architecture doc is explicit: the room must be exactly at capacity.
     if (this.players.size !== this.settings.maxPlayers) return false;
     if (this.players.size < MIN_PLAYERS) return false;
-    return [...this.players.values()].every((player) => player.playerId === this.hostPlayerId || player.isReady);
+    return [...this.players.values()].every(
+      (player) => player.playerId === this.hostPlayerId || player.isReady
+    );
   }
 
-  private handleStart(sender: Party.Connection, playerId: string) {
-    if (playerId !== this.hostPlayerId) return this.sendError(sender, "not_host", "Only the host can start.");
+  private handleStart(connectionId: string, playerId: string) {
+    if (playerId !== this.hostPlayerId) return this.sendError(connectionId, "not_host", "Only the host can start.");
     if (!this.canStart()) {
-      return this.sendError(sender, "not_ready", "Everyone needs to be seated and ready.");
+      return this.sendError(connectionId, "not_ready", "Everyone needs to be seated and ready.");
     }
     this.startMatch();
   }
 
-  private handleRematch(sender: Party.Connection, playerId: string) {
-    if (playerId !== this.hostPlayerId) return this.sendError(sender, "not_host", "Only the host can restart.");
-    if (this.status !== "finished") return this.sendError(sender, "bad_request", "The match is still running.");
+  private handleRematch(connectionId: string, playerId: string) {
+    if (playerId !== this.hostPlayerId) {
+      return this.sendError(connectionId, "not_host", "Only the host can restart.");
+    }
+    if (this.status !== "finished") {
+      return this.sendError(connectionId, "bad_request", "The match is still running.");
+    }
 
     this.clearTurnTimer();
     this.status = "lobby";
@@ -399,21 +425,24 @@ export default class ChainReactionRoom implements Party.Server {
     this.status = "in_match";
     this.armTurnTimer();
 
-    this.room.broadcast(encode(this.matchMessage("match.started")));
+    this.broadcast({
+      type: "match.started",
+      payload: { room: this.roomSnapshot(), match: this.matchSnapshot() }
+    });
   }
 
   private handleMove(
-    sender: Party.Connection,
+    connectionId: string,
     playerId: string,
     payload: { row: number; col: number; moveCount: number }
   ) {
     if (this.status !== "in_match" || !this.game) {
-      return this.sendError(sender, "bad_request", "No match is running.");
+      return this.sendError(connectionId, "bad_request", "No match is running.");
     }
 
     const current = this.game.players[this.game.currentPlayerIndex];
     if (!current || current.id !== playerId) {
-      return this.sendError(sender, "not_your_turn", "It is not your turn.");
+      return this.sendError(connectionId, "not_your_turn", "It is not your turn.");
     }
     // A double tap, or a move sent just as the timer auto-played, arrives with a
     // stale count and is dropped rather than played twice.
@@ -421,7 +450,7 @@ export default class ChainReactionRoom implements Party.Server {
 
     const move: Move = { playerId, row: payload.row, col: payload.col };
     if (!isLegalMove(this.game, move)) {
-      return this.sendError(sender, "illegal_move", "You cannot play there.");
+      return this.sendError(connectionId, "illegal_move", "You cannot play there.");
     }
 
     this.commitMove(move, false);
@@ -441,7 +470,7 @@ export default class ChainReactionRoom implements Party.Server {
   }
 
   /**
-   * Play for whoever ran out of time — or never showed up after a disconnect.
+   * Play for whoever ran out of time — or never came back after a disconnect.
    *
    * The randomness lives here rather than in the engine, which is the whole point
    * of `pickAutoMove` taking its rng as an argument.
@@ -458,33 +487,28 @@ export default class ChainReactionRoom implements Party.Server {
 
     // Frames are for the client to animate; the server only needs the outcome.
     this.game = applyMove(this.game, move).state;
-
     const played: PlayedMove = { playerId: move.playerId, row: move.row, col: move.col, autoPlayed };
 
     if (this.game.status === "finished") {
       this.clearTurnTimer();
       this.status = "finished";
-      this.room.broadcast(
-        encode({
-          type: "match.finished",
-          payload: {
-            room: this.roomSnapshot(),
-            match: this.matchSnapshot(),
-            move: played,
-            winnerPlayerId: this.game.winnerId
-          }
-        })
-      );
+      this.broadcast({
+        type: "match.finished",
+        payload: {
+          room: this.roomSnapshot(),
+          match: this.matchSnapshot(),
+          move: played,
+          winnerPlayerId: this.game.winnerId
+        }
+      });
       return;
     }
 
     this.armTurnTimer();
-    this.room.broadcast(
-      encode({
-        type: "match.updated",
-        payload: { room: this.roomSnapshot(), match: this.matchSnapshot(), move: played }
-      })
-    );
+    this.broadcast({
+      type: "match.updated",
+      payload: { room: this.roomSnapshot(), match: this.matchSnapshot(), move: played }
+    });
   }
 
   /* ---------------- snapshots ---------------- */
@@ -494,8 +518,7 @@ export default class ChainReactionRoom implements Party.Server {
   }
 
   private roomSnapshot(): RoomSnapshot {
-    const seats = this.seatedInOrder();
-    const players: RoomPlayer[] = seats.map((seat, index) => ({
+    const players: RoomPlayer[] = this.seatedInOrder().map((seat, index) => ({
       playerId: seat.playerId,
       displayName: seat.displayName,
       color: PLAYER_COLORS[index % PLAYER_COLORS.length],
@@ -507,7 +530,7 @@ export default class ChainReactionRoom implements Party.Server {
     }));
 
     return {
-      roomCode: this.room.id,
+      roomCode: this.roomCode,
       status: this.status,
       hostPlayerId: this.hostPlayerId,
       settings: { ...this.settings },
@@ -526,21 +549,34 @@ export default class ChainReactionRoom implements Party.Server {
     };
   }
 
-  private matchMessage(type: "match.started"): ServerMessage {
-    return { type, payload: { room: this.roomSnapshot(), match: this.matchSnapshot() } };
-  }
-
   /* ---------------- plumbing ---------------- */
 
-  private send(connection: Party.Connection, message: ServerMessage) {
-    connection.send(encode(message));
+  private sendTo(connectionId: string, message: ServerMessage) {
+    const client = this.clients.get(connectionId);
+    if (!client) return;
+    try {
+      client.socket.send(encode(message));
+    } catch {
+      this.clients.delete(connectionId);
+    }
   }
 
-  private sendError(connection: Party.Connection, code: RoomErrorCode, message: string) {
-    this.send(connection, { type: "room.error", payload: { code, message } });
+  private sendError(connectionId: string, code: RoomErrorCode, message: string) {
+    this.sendTo(connectionId, { type: "room.error", payload: { code, message } });
+  }
+
+  private broadcast(message: ServerMessage) {
+    const raw = encode(message);
+    for (const [id, client] of this.clients) {
+      try {
+        client.socket.send(raw);
+      } catch {
+        this.clients.delete(id);
+      }
+    }
   }
 
   private broadcastRoom() {
-    this.room.broadcast(encode({ type: "room.snapshot", payload: { room: this.roomSnapshot() } }));
+    this.broadcast({ type: "room.snapshot", payload: { room: this.roomSnapshot() } });
   }
 }

@@ -114,28 +114,38 @@ Suggested event families:
 - reactions
 - reconnect/resume
 
-## Transport Decision — PartyKit (implemented 2026-08-11)
+## Transport Decision — Cloudflare Durable Objects (implemented 2026-08-11)
 
 Socket.IO, named above, was never viable on this hosting: Vercel serverless
 functions cannot hold a persistent WebSocket. Realtime therefore cannot live in
 the Next app at all, which invalidated the original plan before any code existed.
 
-**PartyKit** (Cloudflare) was chosen over a standalone socket server on Railway or
-Fly. Turn-based rooms hibernate between moves and are billed nothing while a
-lobby waits; an always-on instance costs the same at 3am with nobody playing, and
-needs Redis as soon as it scales past one node. PartyKit's room-per-id model is
-also already the isolation this document asks for under "Scaling Path".
+**Cloudflare Durable Objects** were chosen over a standalone socket server on
+Railway or Fly. A turn-based room costs nothing while a lobby waits, whereas an
+always-on instance costs the same at 3am with nobody playing and needs Redis as
+soon as it scales past one node. `idFromName` gives exactly one instance per room
+code globally, which is already the room-id isolation this document asks for
+under "Scaling Path".
+
+**PartyKit was implemented first and then removed.** It is a thin wrapper over
+this same primitive, and it cannot deploy: its shared `partykit.dev` zone has hit
+Cloudflare's 10,000-custom-domains-per-zone limit, and deploying to a private
+account fails as well, because a free Cloudflare plan permits Durable Objects
+only through a `new_sqlite_classes` migration and no published PartyKit build —
+latest or beta — emits one. The room server is therefore a plain Worker, and
+`wrangler.toml` carries that migration directly. The room logic did not change
+when the wrapper was dropped; only the transport plumbing did.
 
 Two deviations from the sketch below, both deliberate:
 
-- **`session.restore` is a connect-time query parameter, not a message.** PartyKit
-  hands the server the request URL at connect, so identity is known before the
-  first frame. A round trip would leave the connection briefly unidentified for
-  no benefit.
+- **`session.restore` is a connect-time query parameter, not a message.** The
+  Worker has the request URL at the point of the WebSocket upgrade, so identity
+  is known before the first frame. A round trip would leave the connection
+  briefly unidentified for no benefit.
 - **The suggested `apps/web` + `apps/server` monorepo was not created.** Its goal
   was to keep gameplay logic portable and avoid duplication between frontend and
   backend. `lib/engine/` is already a pure, framework-free module, and
-  `party/room.ts` imports it directly — the same rules run in both places from
+  `worker/room.ts` imports it directly — the same rules run in both places from
   one copy, which is the outcome the split was for.
 
 Everything else — the envelope shape, the event names, the room flow, the data

@@ -1,0 +1,17 @@
+name = "cr-gaym-rooms"
+main = "worker/index.ts"
+compatibility_date = "2025-06-01"
+
+[durable_objects]
+bindings = [{ name = "ROOMS", class_name = "ChainReactionRoom" }]
+
+# SQLite-backed, and that is not a preference.
+#
+# A free Cloudflare plan permits Durable Objects only through a
+# `new_sqlite_classes` migration; the older `new_classes` form is rejected with
+# "you must create a namespace using a new_sqlite_classes migration". This is
+# exactly what no published PartyKit build could emit, which is why the room
+# server is a plain Worker.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChainReactionRoom"]

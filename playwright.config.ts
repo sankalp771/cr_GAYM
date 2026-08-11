@@ -47,7 +47,7 @@ export default defineConfig({
       timeout: 120_000
     },
     {
-      command: `npx partykit dev --port ${PARTY_PORT}`,
+      command: `npx wrangler dev --port ${PARTY_PORT}`,
       // The room server's health endpoint. A bare `/` is not routed and would
       // never return 200, so Playwright would wait out its timeout.
       url: `http://127.0.0.1:${PARTY_PORT}/parties/main/health`,

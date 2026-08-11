@@ -12,8 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "dev:party": "partykit dev",
-    "deploy:party": "partykit deploy"
+    "dev:rooms": "wrangler dev --port 1999",
+    "deploy:rooms": "wrangler deploy"
   },
   "overrides": {
     "postcss": "^8.5.26"
@@ -38,10 +38,10 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.23",
     "jsdom": "^29.1.1",
-    "partykit": "^0.0.115",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.8.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.120.1"
   }
 }

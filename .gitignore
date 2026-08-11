@@ -31,3 +31,6 @@ pnpm-debug.log*
 
 # PartyKit build cache
 .partykit/
+
+# Wrangler build cache
+.wrangler/
