@@ -13,6 +13,7 @@ import {
   TURN_SECONDS,
   type AiDifficulty,
   type Board,
+  type Cell,
   type GameState,
   type GridConfig,
   type Player,
@@ -50,7 +51,6 @@ type AnimationStep = {
   exploded: boolean;
 };
 
-const VICTORY_FRAME_MS = 100;
 const EMPTY_FLASH: FlashSet = new Set<string>();
 
 /**
@@ -62,10 +62,14 @@ const CASCADE_BUDGET_MS = 2200;
 const MAX_STEP_MS = 165;
 const MIN_STEP_MS = 45;
 
-function stepDurations(count: number): number[] {
+/** Budgets for the two waves of the end-of-match finale. See `buildVictoryFinale`. */
+const FINALE_CLAIM_BUDGET_MS = 900;
+const FINALE_BLAST_BUDGET_MS = 1300;
+
+function stepDurations(count: number, budgetMs = CASCADE_BUDGET_MS): number[] {
   if (count <= 0) return [];
 
-  const flat = Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, CASCADE_BUDGET_MS / count));
+  const flat = Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, budgetMs / count));
 
   return Array.from({ length: count }, (_, index) => {
     const progress = count === 1 ? 0 : index / (count - 1);
@@ -90,20 +94,69 @@ function buildPlayers(playerNames: string[]): Player[] {
   }));
 }
 
-/** Cosmetic end-of-match sweep: repaint every occupied cell in the winner's colour. */
-function buildVictorySweep(board: Board, winnerId: string): AnimationStep[] {
+/**
+ * Cosmetic end-of-match finale.
+ *
+ * The engine stops a decided cascade the instant one player holds every orb.
+ * That is not an optimisation: orbs are conserved and the grid has no sink, so a
+ * board above its own stable capacity has *no* resting configuration and the
+ * reaction would run forever. The cost is that the final board is frozen
+ * mid-reaction, with cells sitting at or above critical mass looking as though
+ * they jammed.
+ *
+ * So the ending is played out for the eye instead. Two waves, radiating from the
+ * deciding move: the winner claims the board, then the whole thing goes off.
+ *
+ * It never touches game state — `result.state` is already final and this only
+ * drives `displayBoard`. Rings are Manhattan distance because that is the way
+ * orbs actually travel, so the flourish moves like a real cascade rather than a
+ * row-major wipe.
+ *
+ * Exported for `__tests__/local-arena.test.ts`, which is what holds the board to
+ * finishing empty.
+ */
+export function buildVictoryFinale(
+  board: Board,
+  winnerId: string,
+  origin: { row: number; col: number }
+): { steps: AnimationStep[]; durations: number[] } {
   const working = board.map((row) => row.map((cell) => ({ ...cell })));
   const occupied = working.flat().filter((cell) => cell.count > 0);
+  if (occupied.length === 0) return { steps: [], durations: [] };
 
-  return occupied.map((cell) => {
-    working[cell.row][cell.col].ownerId = winnerId;
-    return {
-      board: working.map((row) => row.map((entry) => ({ ...entry }))),
-      flash: new Set([cellKey(cell.row, cell.col)]),
-      burst: EMPTY_FLASH,
-      exploded: false
-    };
+  const byDistance = new Map<number, Cell[]>();
+  for (const cell of occupied) {
+    const distance = Math.abs(cell.row - origin.row) + Math.abs(cell.col - origin.col);
+    const ring = byDistance.get(distance);
+    if (ring) ring.push(cell);
+    else byDistance.set(distance, [cell]);
+  }
+
+  const rings = [...byDistance.keys()].sort((a, b) => a - b).map((distance) => byDistance.get(distance)!);
+  const snapshot = () => working.map((row) => row.map((cell) => ({ ...cell })));
+  const keysOf = (ring: Cell[]) => new Set(ring.map((cell) => cellKey(cell.row, cell.col)));
+
+  const claim: AnimationStep[] = rings.map((ring) => {
+    for (const cell of ring) working[cell.row][cell.col].ownerId = winnerId;
+    return { board: snapshot(), flash: keysOf(ring), burst: EMPTY_FLASH, exploded: false };
   });
+
+  const blast: AnimationStep[] = rings.map((ring) => {
+    // The owner is left in place on an emptied cell on purpose. This board is for
+    // display only, and the burst particles inherit `--player-color` from the
+    // cell — clearing the owner too would drop them back to the default cyan
+    // instead of the winner's colour.
+    for (const cell of ring) working[cell.row][cell.col].count = 0;
+    return { board: snapshot(), flash: EMPTY_FLASH, burst: keysOf(ring), exploded: true };
+  });
+
+  return {
+    steps: [...claim, ...blast],
+    durations: [
+      ...stepDurations(claim.length, FINALE_CLAIM_BUDGET_MS),
+      ...stepDurations(blast.length, FINALE_BLAST_BUDGET_MS)
+    ]
+  };
 }
 
 /**
@@ -275,12 +328,10 @@ export function LocalArena() {
           result.state.players.find((player) => player.id === result.state.winnerId)?.name ?? "Someone";
         setStatusText(`${championName} is consuming the board.`);
 
-        const sweep = buildVictorySweep(result.state.board, result.state.winnerId);
-        if (sweep.length > 0) {
-          await playFrames(
-            sweep,
-            sweep.map(() => VICTORY_FRAME_MS)
-          );
+        const finale = buildVictoryFinale(result.state.board, result.state.winnerId, { row, col });
+        if (finale.steps.length > 0) {
+          await playFrames(finale.steps, finale.durations);
+          setBurstCells(EMPTY_FLASH);
         }
 
         playSound("victory");
