@@ -3,6 +3,16 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = 3100;
 const baseURL = `http://127.0.0.1:${PORT}`;
 
+/**
+ * The room server runs alongside the app for the multiplayer specs.
+ *
+ * Deliberately the same 1999 that `partyHost()` falls back to when
+ * `NEXT_PUBLIC_PARTYKIT_HOST` is unset. `next build` inlines `NEXT_PUBLIC_*`, so
+ * choosing any other port here would mean the tested bundle had to be built with
+ * a matching env var — this way an untouched `npm run build` is testable as is.
+ */
+const PARTY_PORT = 1999;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -29,10 +39,20 @@ export default defineConfig({
       }
     }
   ],
-  webServer: {
-    command: `npx next start --port ${PORT}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000
-  }
+  webServer: [
+    {
+      command: `npx next start --port ${PORT}`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000
+    },
+    {
+      command: `npx wrangler dev --port ${PARTY_PORT}`,
+      // The room server's health endpoint. A bare `/` is not routed and would
+      // never return 200, so Playwright would wait out its timeout.
+      url: `http://127.0.0.1:${PARTY_PORT}/parties/main/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000
+    }
+  ]
 });

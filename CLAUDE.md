@@ -10,7 +10,8 @@ A glow-styled Chain Reaction game. Players place orbs on a grid; a cell that
 reaches its critical mass explodes into its orthogonal neighbours, converting
 them and potentially triggering a chain. Last player standing wins.
 
-Deployed on Vercel. Local play works; multiplayer is not implemented.
+Deployed on Vercel, with the multiplayer room server on Cloudflare Workers.
+Local play and online rooms both work.
 
 ## Stack (verified)
 
@@ -44,6 +45,8 @@ All five run in CI on every push and pull request.
 app/            App Router routes: / , /local , /multiplayer
 components/     React components. Presentation only.
 lib/engine/     The game engine. Pure. See the rules below.
+lib/multiplayer/ Wire protocol and the client transport hook.
+worker/         The authoritative room server (Cloudflare Durable Object).
 e2e/            Playwright specs.
 docs/           Product, architecture, roadmap, agent brief, worklogs.
 ```
@@ -185,6 +188,74 @@ Two things in `components/local-arena.tsx` are load-bearing:
   reaches its handler through a ref (stale-closure trap, same as the turn timer)
   and latches on `moveCount` so it cannot play twice for one turn.
 
+## Multiplayer
+
+`/multiplayer` is real. Rooms are **Cloudflare Durable Objects**, in `worker/room.ts`, one instance per
+room code — `idFromName` is what guarantees that, and it is why a room can hold
+its state in memory and two players can be certain they are talking to the same
+one.
+
+Cloudflare because Vercel serverless functions cannot hold a persistent
+WebSocket, so realtime could never live inside the Next app. Against a socket
+server on Railway or Fly: a turn-based room costs nothing while a lobby waits,
+whereas an always-on box costs the same at 3am with nobody playing and needs
+Redis the moment it scales past one node.
+
+**PartyKit was tried first and removed.** It is a thin wrapper over this same
+Durable Object and it cannot ship: its shared `partykit.dev` zone has hit
+Cloudflare's 10,000-custom-domains-per-zone limit, and deploying to a private
+account fails too, because a free Cloudflare plan permits Durable Objects only
+via a `new_sqlite_classes` migration and no published PartyKit build — latest or
+beta — emits one. **Do not reintroduce it.** See `wrangler.toml`, where that
+migration is a single line.
+
+```bash
+npm run dev          # the Next app
+npm run dev:rooms    # the room server, on :1999 — both are needed
+npm run deploy:rooms # ships the room server (needs a Cloudflare account)
+```
+
+`NEXT_PUBLIC_PARTYKIT_HOST` points the browser at a deployed room server. Unset,
+it falls back to `127.0.0.1:1999`, which is also the port the Playwright suite
+starts one on — so an untouched `npm run build` is testable without env plumbing.
+
+### The rules run on the server, and that is the whole point
+
+`worker/room.ts` imports `lib/engine` directly and calls the same `applyMove` the
+browser does. The purity rule exists *for* this: one copy of the rules, so a
+client cannot disagree with the server about what a move did. Both things the
+engine refuses to touch are injected in the server — `Math.random` for auto-play,
+the wall clock for turn deadlines.
+
+The client holds **no authority**. It sends move intents and renders snapshots.
+Whether you may sit, start, or play a given cell is decided in `worker/room.ts`.
+
+**Cascade frames are never sent.** A resolved move can be hundreds of full board
+clones. The server broadcasts the move and the resulting state; the client
+replays that move through its own engine to generate identical frames, then
+reconciles. If its board is not exactly one move behind, it snaps to the
+authoritative state instead of animating — see `advanceTo` in `use-room.ts`.
+This only works because the engine is deterministic. **Do not add non-determinism
+to the engine, or online play will desync rather than merely misbehave.**
+
+### Details that are load-bearing
+
+- **Seats key on a session token, not the socket.** The token lives in
+  `localStorage` and is passed as a connect query parameter, so a refresh or a
+  dropped connection returns you to the same seat. In the lobby a seat is freed
+  after a short grace period; in a match it is never freed — the turn timer
+  auto-plays so one person's wifi cannot stall everyone.
+- **The room code is in the URL.** That makes a room a shareable link and is what
+  makes reload-rejoins work.
+- **`match.move` carries the mover's `moveCount`** and the server drops anything
+  that does not match, so a double tap, or a move sent as the timer auto-played,
+  is ignored rather than played twice.
+- **Joining an unknown code is an error, not a new room.** PartyKit creates a room
+  on connect, so without this a typo puts you in a lobby nobody is ever joining.
+- `components/local/match-screen.tsx` is shared by both modes. Its multiplayer
+  differences are optional props (`canAct`, `seatBadge`, `settings`, …) that
+  default to local behaviour, so there is one board and one animation path.
+
 ## Tailwind v4
 
 v4 is CSS-first. There is **no `tailwind.config.js`** and adding one is the wrong
@@ -246,17 +317,14 @@ mid-range Android.
   modifier, stretched those cells to fill `.hero-card`, and shipped a broken home
   page to production. Prefix new classes (`.orb-burst`, not `.burst`) and grep
   before naming.
-- Start multiplayer work beyond the agreed transport (see below)
+- Move authority for a gameplay rule into the client. The room server decides;
+  the browser draws (see below)
 
 ## Open decisions
 
-**Multiplayer transport: PartyKit.** Vercel serverless functions cannot hold
-persistent WebSocket connections, so realtime cannot live in the Next app.
-PartyKit (now Cloudflare, deployed to your own account) was chosen over a
-separate socket server on Railway/Fly: turn-based rooms hibernate while waiting
-for a move and are billed nothing, whereas an always-on instance costs the same
-at 3am with nobody playing and needs Redis the moment it scales past one node.
-Needs a Cloudflare account before that work starts.
+**Multiplayer deploy: pending a Cloudflare deploy.** The code is built and runs
+locally; `npm run deploy:rooms` is the only step left. Until then `/multiplayer` works against `npm run dev:rooms` and
+against the Playwright suite, and nothing else is blocked on it.
 
 **Next 16 upgrade: pending.** Blocked behind one accepted advisory — `sharp`
 0.34.5 carries inherited libvips CVEs and cannot be overridden without Next 16.
