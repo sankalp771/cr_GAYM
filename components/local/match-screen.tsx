@@ -190,7 +190,7 @@ export function MatchScreen({
         </div>
 
         <aside className={styles.side}>
-          <section className={styles.sideCard}>
+          <section className={`${styles.sideCard} ${styles.turnCard}`}>
             <h2 className={styles.sideTitle}>Turn</h2>
             <div className={styles.timerTrack}>
               <div

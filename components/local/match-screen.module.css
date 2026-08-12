@@ -215,21 +215,62 @@
  * Below the two-column breakpoint the board keeps the top of the screen and the
  * panel sits under it. The board still may not be scrolled away from.
  */
+/*
+ * Phone layout.
+ *
+ * The panel moves under the board. It used to lay the two cards out as a
+ * horizontal scroller at `flex: 1 0 13rem` each — 26rem of cards on a 23rem
+ * phone, so Round Intel simply sat off the right edge with nothing to suggest it
+ * was there. Nothing here may overflow: on a screen this size, hidden is gone.
+ */
 @media (max-width: 860px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.5rem;
   }
 
   .side {
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    max-height: 8.5rem;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow: visible;
   }
 
   .sideCard {
-    flex: 1 0 13rem;
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+  }
+
+  /* Seats become a wrapping strip of chips. Stacked full-width rows cost a line
+     each, and eight of them under a board is most of a phone screen. Wrapping
+     rather than scrolling keeps every seat visible. */
+  .lineup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .player {
+    flex: 0 1 auto;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 999px;
+  }
+
+  .playerName {
+    flex: 0 1 auto;
+    max-width: 5.5rem;
+    font-size: 0.82rem;
+  }
+
+  /* The top bar already names whose turn it is and counts it down, so the panel
+     copy of both is redundant here and only costs height. The status line stays
+     — online it is where "Reconnecting…" appears. */
+  .turnCard .sideTitle,
+  .turnCard .timerTrack {
+    display: none;
   }
 }
 

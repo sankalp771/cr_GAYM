@@ -255,6 +255,13 @@ to the engine, or online play will desync rather than merely misbehave.**
 - `components/local/match-screen.tsx` is shared by both modes. Its multiplayer
   differences are optional props (`canAct`, `seatBadge`, `settings`, …) that
   default to local behaviour, so there is one board and one animation path.
+- **If `NEXT_PUBLIC_PARTYKIT_HOST` is unset on a deployment**, the client dials
+  `127.0.0.1:1999` — which on a phone is the phone. The socket then retries
+  forever and the lobby reads as merely slow. `isRoomServerMisconfigured()` names
+  that case, and an 8-second dial timeout stops the lobby claiming to be
+  connecting when nothing is listening. Do not remove either: a silent infinite
+  retry is indistinguishable from a bad network, and it wasted a debugging round
+  trip once already.
 
 ## Tailwind v4
 
