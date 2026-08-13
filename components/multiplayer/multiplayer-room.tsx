@@ -103,6 +103,28 @@ export function MultiplayerRoom() {
   );
   const isHost = me?.isHost ?? false;
 
+  /**
+   * A local clock for the turn countdown.
+   *
+   * The deadline is translated into this device's clock once per snapshot, using
+   * the `serverNow` the server sends alongside it, so a phone whose clock is
+   * minutes out still counts down the right number of seconds. Rendering
+   * `turnDeadline - serverNow` directly was a frozen number: both come from the
+   * same message and never change until the next one arrives.
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const deadlineAt = useMemo(
+    () => (match ? Date.now() + (match.turnDeadline - match.serverNow) : 0),
+    // Recomputed per snapshot: `match` is a new object each broadcast.
+    [match]
+  );
+
+  useEffect(() => {
+    if (!match) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [match]);
+
   const leave = useCallback(() => {
     send({ type: "room.leave", payload: {} });
     window.history.replaceState({}, "", "/multiplayer");
@@ -225,7 +247,7 @@ export function MultiplayerRoom() {
   if (inMatch && displayGame) {
     const current = displayGame.players[displayGame.currentPlayerIndex] ?? null;
     const isMyTurn = current?.id === playerId && displayGame.status === "playing";
-    const secondsLeft = match ? Math.max(0, match.turnDeadline - match.serverNow) : 0;
+    const remainingMs = Math.max(0, deadlineAt - nowMs);
 
     return (
       <MatchScreen
@@ -249,7 +271,7 @@ export function MultiplayerRoom() {
               ? "Your move."
               : `Waiting for ${current?.name ?? "the next player"}.`
         }
-        timerRemainingMs={secondsLeft}
+        timerRemainingMs={remainingMs}
         isResolving={isResolving}
         canAct={isMyTurn && !isResolving}
         seatBadge={(id) => {
