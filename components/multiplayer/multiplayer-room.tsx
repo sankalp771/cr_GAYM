@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BOARD_PRESETS, PLAYER_COLORS, type PresetId } from "@/lib/engine";
 import { createRoomCode, isRoomCode, normalizeRoomCode, MAX_DISPLAY_NAME } from "@/lib/multiplayer/protocol";
-import { useRoom } from "@/lib/multiplayer/use-room";
+import { isRoomServerMisconfigured, partyHost, useRoom } from "@/lib/multiplayer/use-room";
 import { primeAudio } from "@/lib/sound";
 import { MatchScreen } from "@/components/local/match-screen";
 import styles from "./multiplayer-room.module.css";
@@ -15,7 +15,7 @@ const NAME_KEY = "cr-gaym:display-name";
  * Online play: join screen, lobby, then the match.
  *
  * The client is a view. Every rule — who may sit, who may start, whose turn it
- * is, whether a move is legal — is decided by the room server in `party/room.ts`.
+ * is, whether a move is legal — is decided by the room server in `worker/room.ts`.
  * This file decides only what to draw.
  */
 export function MultiplayerRoom() {
@@ -29,6 +29,7 @@ export function MultiplayerRoom() {
 
   const {
     connection,
+    unreachable,
     playerId,
     room,
     match,
@@ -299,6 +300,14 @@ export function MultiplayerRoom() {
             Copy code
           </button>
         </div>
+
+        {unreachable ? (
+          <p className={styles.error} role="alert" data-testid="room-unreachable">
+            {isRoomServerMisconfigured()
+              ? "Online play is not configured for this deployment — the room server address is missing, so this page is trying to reach one on your own device."
+              : `Cannot reach the room server at ${partyHost()}. It may be down, or blocked by your network.`}
+          </p>
+        ) : null}
 
         <p className={styles.status} data-testid="lobby-status">
           {connection !== "online"

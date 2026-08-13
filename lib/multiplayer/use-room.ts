@@ -43,15 +43,42 @@ function sessionToken(): string {
   }
 }
 
-/**
- * Where the room server lives.
- *
- * Falls back to the PartyKit dev server so a checkout runs with `npm run dev:all`
- * and no configuration. Production sets `NEXT_PUBLIC_PARTYKIT_HOST`.
- */
+/** The deployed room server. Public — it ships in the client bundle by definition. */
+const DEPLOYED_ROOM_HOST = "cr-gaym-rooms.crgaym.workers.dev";
+
+const LOCAL_HOST = /^(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:\d+)?$/;
+
 export function partyHost(): string {
-  return process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
+  if (process.env.NEXT_PUBLIC_PARTYKIT_HOST) return process.env.NEXT_PUBLIC_PARTYKIT_HOST;
+
+  // Decided at runtime from where the page is served, not baked in at build time.
+  // A build-time-only default is what caused the phone to dial `127.0.0.1` — its
+  // own loopback — and retry forever: `next build` inlines `NEXT_PUBLIC_*`, so a
+  // deploy that forgot the variable had no way to recover. This way a developer
+  // on localhost gets their local server and everyone else gets the real one,
+  // with the environment variable still overriding both.
+  if (typeof window !== "undefined" && !LOCAL_HOST.test(window.location.host)) {
+    return DEPLOYED_ROOM_HOST;
+  }
+  return "127.0.0.1:1999";
 }
+
+/**
+ * True when the page is deployed but still pointing at a local room server.
+ *
+ * This is a build-time misconfiguration — `NEXT_PUBLIC_PARTYKIT_HOST` was not
+ * set — and it is worth naming explicitly, because the symptom is otherwise
+ * indistinguishable from a slow network: the browser dials `127.0.0.1`, which on
+ * a phone is the phone, and the socket retries forever without ever failing
+ * loudly.
+ */
+export function isRoomServerMisconfigured(): boolean {
+  if (typeof window === "undefined") return false;
+  return LOCAL_HOST.test(partyHost()) && !LOCAL_HOST.test(window.location.host);
+}
+
+/** How long to dial before telling the player it is not working. */
+const CONNECT_TIMEOUT_MS = 8_000;
 
 export type ConnectionState = "connecting" | "online" | "offline";
 
@@ -59,6 +86,8 @@ export type RoomError = { code: string; message: string } | null;
 
 export type UseRoom = {
   connection: ConnectionState;
+  /** The room server did not answer in time — almost always configuration, not network. */
+  unreachable: boolean;
   playerId: string | null;
   room: RoomSnapshot | null;
   /** Authoritative match state. Null in the lobby. */
@@ -87,6 +116,7 @@ export type UseRoom = {
  */
 export function useRoom(roomCode: string | null): UseRoom {
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [unreachable, setUnreachable] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [match, setMatch] = useState<MatchSnapshot | null>(null);
@@ -198,8 +228,18 @@ export function useRoom(roomCode: string | null): UseRoom {
     });
     socketRef.current = socket;
     setConnection("connecting");
+    setUnreachable(false);
 
-    const onOpen = () => setConnection("online");
+    // partysocket retries quietly forever, which is the right behaviour for a
+    // blip and the wrong one for a server that is not there at all. Without this
+    // the lobby says "Connecting…" indefinitely and never admits defeat.
+    const giveUp = window.setTimeout(() => setUnreachable(true), CONNECT_TIMEOUT_MS);
+
+    const onOpen = () => {
+      window.clearTimeout(giveUp);
+      setUnreachable(false);
+      setConnection("online");
+    };
     const onClose = () => setConnection("offline");
 
     const onMessage = (event: MessageEvent<string>) => {
@@ -247,6 +287,7 @@ export function useRoom(roomCode: string | null): UseRoom {
       socket.removeEventListener("open", onOpen);
       socket.removeEventListener("close", onClose);
       socket.removeEventListener("message", onMessage);
+      window.clearTimeout(giveUp);
       socket.close();
       socketRef.current = null;
     };
@@ -262,6 +303,7 @@ export function useRoom(roomCode: string | null): UseRoom {
 
   return {
     connection,
+    unreachable,
     playerId,
     room,
     match,
