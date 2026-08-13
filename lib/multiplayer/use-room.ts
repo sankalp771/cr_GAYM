@@ -134,6 +134,17 @@ export function useRoom(roomCode: string | null): UseRoom {
   const timeoutsRef = useRef<number[]>([]);
   /** The state the animation is currently showing, read by the async player. */
   const shownRef = useRef<GameState | null>(null);
+  /**
+   * The newest authoritative state waiting to be drawn, and whether the drawer is
+   * already running. Applying a snapshot takes as long as its cascade animation,
+   * so two snapshots arriving close together used to overlap — and the slower one
+   * finished last and wrote its now-stale board over the newer one. That is the
+   * desync where both players see the *other* as the one to move and neither can
+   * play, until the server's auto-play timer forces another broadcast and
+   * accidentally repairs it.
+   */
+  const pendingRef = useRef<{ state: GameState; move: PlayedMove | null } | null>(null);
+  const drawingRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -181,7 +192,7 @@ export function useRoom(roomCode: string | null): UseRoom {
    * board would show a cascade that never happened.
    */
   const advanceTo = useCallback(
-    async (next: GameState, move: PlayedMove | null) => {
+    async (next: GameState, move: PlayedMove | null): Promise<void> => {
       const shown = shownRef.current;
       const canReplay =
         move !== null && shown !== null && shown.status === "playing" && shown.moveCount === next.moveCount - 1;
@@ -216,6 +227,44 @@ export function useRoom(roomCode: string | null): UseRoom {
       setIsResolving(false);
     },
     [playSteps]
+  );
+
+  /**
+   * Accept an authoritative snapshot and draw it, one at a time.
+   *
+   * Two rules keep the client honest:
+   *
+   * - **Never go backwards.** A snapshot no newer than what is already on screen
+   *   is dropped. Reconnecting replays `match.started`, and out-of-order or
+   *   duplicate frames are ordinary on a flaky phone connection.
+   * - **Only the newest pending snapshot is drawn.** If three arrive while a
+   *   cascade is playing, the intermediate ones are skipped rather than queued:
+   *   the goal is to end up showing the truth, not to replay history.
+   */
+  const applySnapshot = useCallback(
+    (next: GameState, move: PlayedMove | null) => {
+      const shown = shownRef.current;
+      const pending = pendingRef.current;
+      if (shown && next.moveCount < shown.moveCount) return;
+      if (pending && next.moveCount < pending.state.moveCount) return;
+
+      pendingRef.current = { state: next, move };
+      if (drawingRef.current) return;
+
+      drawingRef.current = true;
+      void (async () => {
+        try {
+          while (pendingRef.current) {
+            const job = pendingRef.current;
+            pendingRef.current = null;
+            await advanceTo(job.state, job.move);
+          }
+        } finally {
+          drawingRef.current = false;
+        }
+      })();
+    },
+    [advanceTo]
   );
 
   useEffect(() => {
@@ -257,6 +306,7 @@ export function useRoom(roomCode: string | null): UseRoom {
             setMatch(null);
             setDisplayGame(null);
             shownRef.current = null;
+            pendingRef.current = null;
           }
           break;
         case "room.error":
@@ -266,14 +316,14 @@ export function useRoom(roomCode: string | null): UseRoom {
           setRoom(message.payload.room);
           setMatch(message.payload.match);
           setLastMove(null);
-          void advanceTo(message.payload.match.state, null);
+          applySnapshot(message.payload.match.state, null);
           break;
         case "match.updated":
         case "match.finished": {
           setRoom(message.payload.room);
           setMatch(message.payload.match);
           setLastMove(message.payload.move);
-          void advanceTo(message.payload.match.state, message.payload.move);
+          applySnapshot(message.payload.match.state, message.payload.move);
           break;
         }
       }
@@ -291,7 +341,7 @@ export function useRoom(roomCode: string | null): UseRoom {
       socket.close();
       socketRef.current = null;
     };
-    // `advanceTo` is stable; re-running this effect would drop the socket.
+    // `applySnapshot` is stable; re-running this effect would drop the socket.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode]);
 
