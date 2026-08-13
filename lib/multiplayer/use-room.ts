@@ -43,15 +43,24 @@ function sessionToken(): string {
   }
 }
 
-/**
- * Where the room server lives.
- *
- * Falls back to the local dev server so a fresh checkout runs with
- * `npm run dev:rooms` and no configuration. A deployment sets
- * `NEXT_PUBLIC_PARTYKIT_HOST`, which Next inlines at build time.
- */
+/** The deployed room server. Public — it ships in the client bundle by definition. */
+const DEPLOYED_ROOM_HOST = "cr-gaym-rooms.crgaym.workers.dev";
+
+const LOCAL_HOST = /^(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:\d+)?$/;
+
 export function partyHost(): string {
-  return process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
+  if (process.env.NEXT_PUBLIC_PARTYKIT_HOST) return process.env.NEXT_PUBLIC_PARTYKIT_HOST;
+
+  // Decided at runtime from where the page is served, not baked in at build time.
+  // A build-time-only default is what caused the phone to dial `127.0.0.1` — its
+  // own loopback — and retry forever: `next build` inlines `NEXT_PUBLIC_*`, so a
+  // deploy that forgot the variable had no way to recover. This way a developer
+  // on localhost gets their local server and everyone else gets the real one,
+  // with the environment variable still overriding both.
+  if (typeof window !== "undefined" && !LOCAL_HOST.test(window.location.host)) {
+    return DEPLOYED_ROOM_HOST;
+  }
+  return "127.0.0.1:1999";
 }
 
 /**
@@ -65,8 +74,7 @@ export function partyHost(): string {
  */
 export function isRoomServerMisconfigured(): boolean {
   if (typeof window === "undefined") return false;
-  const local = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
-  return local.test(partyHost()) && !local.test(window.location.host);
+  return LOCAL_HOST.test(partyHost()) && !LOCAL_HOST.test(window.location.host);
 }
 
 /** How long to dial before telling the player it is not working. */
