@@ -3,25 +3,32 @@
 /*
  * Global styles.
  *
- * Scope: design tokens, the reset, and the two marketing-ish pages — the
- * landing page and the multiplayer placeholder. Everything belonging to the
- * game itself lives in CSS Modules under `components/local/`.
+ * Scope: design tokens, the reset, and the handful of primitives shared by
+ * genuinely every screen — currently the two link buttons and `.button-reset`.
+ * Nothing else belongs here.
  *
- * That split is deliberate. This file is one flat namespace, and while the
- * arena also lived here a `.burst` rule written for explosion particles
- * collided with the landing page's `.preview-cell.burst` modifier and shipped a
- * broken home page. Component styles do not belong in here — add a
- * `*.module.css` beside the component instead.
+ * That limit is deliberate and was learned the hard way. This file is one flat
+ * namespace, and while the arena also lived here a `.burst` rule written for
+ * explosion particles collided with the landing page's `.preview-cell.burst`
+ * modifier and shipped a broken home page. Page and component styles go in a
+ * `*.module.css` beside the thing they style — `app/home.module.css`,
+ * `components/local/*.module.css`, and so on.
  */
 
 @theme {
-  --font-display: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --font-display: "Chakra Petch", "Segoe UI", Tahoma, sans-serif;
   --color-arena-cyan: #8ef9ff;
   --color-arena-ink: #04060f;
   --color-arena-panel: rgba(8, 14, 30, 0.78);
 }
 
 :root {
+  /* Type. The three families are loaded and self-hosted in `app/layout.tsx`;
+     the fallbacks matter only for the instant before they land. */
+  --font-heading-stack: var(--font-heading), "Segoe UI", Tahoma, sans-serif;
+  --font-sans-stack: var(--font-sans), "Segoe UI", Tahoma, sans-serif;
+  --font-code-stack: var(--font-code), ui-monospace, Consolas, monospace;
+
   --bg: #04060f;
   --panel: rgba(8, 14, 30, 0.78);
   --panel-border: rgba(150, 200, 255, 0.18);
@@ -42,7 +49,7 @@ body {
 }
 
 body {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-sans-stack);
   color: var(--text);
   background:
     radial-gradient(circle at 18% 14%, rgba(19, 156, 211, 0.22), transparent 28%),
@@ -69,6 +76,12 @@ p {
   margin-top: 0;
 }
 
+h1,
+h2 {
+  font-family: var(--font-heading-stack);
+  font-weight: 700;
+}
+
 h1 {
   margin-bottom: 0.75rem;
   font-size: clamp(2.2rem, 6vw, 4.8rem);
@@ -81,7 +94,7 @@ h2 {
   font-size: clamp(1.3rem, 3vw, 1.8rem);
 }
 
-/* ---------- shared primitives (used by every page) ---------- */
+/* ---------- shared primitives ---------- */
 
 .primary-link,
 .ghost-link {
@@ -123,296 +136,11 @@ h2 {
   cursor: pointer;
 }
 
-/* ---------- page shells ---------- */
-
-.home-shell,
-.mode-shell {
-  position: relative;
-  min-height: 100vh;
-  padding: 1.25rem;
-}
-
-.hero-card,
-.mode-header-card,
-.mode-card,
-.info-card {
-  position: relative;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 28px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px);
-  overflow: hidden;
-}
-
-.hero-card::after,
-.mode-header-card::after,
-.mode-card::after,
-.info-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(125deg, rgba(255, 255, 255, 0.09), transparent 28%, transparent 74%, rgba(142, 249, 255, 0.06));
-  pointer-events: none;
-}
-
-.hero-card,
-.mode-header-card {
-  width: min(1200px, 100%);
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.mode-header-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.8fr);
-  gap: 1rem;
-  align-items: center;
-}
-
-.mode-card,
-.info-card {
-  padding: 1.2rem;
-}
-
-.eyebrow,
-.mode-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.45rem 0.8rem;
-  background: rgba(142, 249, 255, 0.1);
-  color: var(--accent);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero-copy,
-.info-copy,
-.mode-card p {
-  color: var(--muted);
-  line-height: 1.65;
-}
-
-.header-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-}
-
-.card-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.mode-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-
-.landing-mode-grid {
-  width: min(1200px, 100%);
-  margin-inline: auto;
-}
-
-.multiplayer-grid {
-  width: min(1280px, 100%);
-  margin: 1rem auto 0;
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: 1rem;
-}
-
-.info-list {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  line-height: 1.8;
-}
-
-/* ---------- landing hero ---------- */
-
-.landing-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-  gap: 1.25rem;
-  align-items: center;
-}
-
-.landing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-top: 1.4rem;
-}
-
-.landing-preview {
-  display: grid;
-  gap: 1rem;
-}
-
-.preview-board-frame {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(5, 10, 24, 0.72);
-  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.03);
-  border-radius: 26px;
-  padding: 1rem;
-}
-
-.preview-board {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 3px;
-  aspect-ratio: 1;
-  padding: 0.35rem;
-  border-radius: 24px;
-  background:
-    linear-gradient(180deg, rgba(20, 34, 69, 0.28), transparent 20%),
-    rgba(2, 7, 19, 0.94);
-  box-shadow:
-    inset 0 0 0 1px rgba(111, 182, 255, 0.18),
-    inset 0 0 30px rgba(76, 123, 255, 0.08);
-}
-
-.preview-cell {
-  position: relative;
-  border-radius: 10px;
-  border: 1px solid rgba(87, 135, 225, 0.26);
-  background: linear-gradient(180deg, rgba(16, 24, 48, 0.96), rgba(5, 11, 26, 0.98));
-}
-
-.preview-orb {
-  position: absolute;
-  inset: 22%;
-  border-radius: 50%;
-  box-shadow: 0 0 24px currentColor;
-}
-
-.preview-orb.red {
-  color: #ff5b8a;
-  background: radial-gradient(circle at 38% 34%, #fff1f7, #ff5b8a 34%, #460514 82%);
-}
-
-.preview-orb.blue {
-  color: #60a9ff;
-  background: radial-gradient(circle at 38% 34%, #f1f8ff, #60a9ff 34%, #052346 82%);
-}
-
-.preview-orb.green {
-  color: #63ff75;
-  background: radial-gradient(circle at 38% 34%, #f1fff4, #63ff75 34%, #063b12 82%);
-}
-
-/* The glow behind an "exploding" preview cell. Scoped to .preview-cell on
-   purpose — a bare `.burst` here is what broke this page once already. */
-.preview-cell.burst::after {
-  content: "";
-  position: absolute;
-  inset: 8%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 190, 78, 0.92), rgba(255, 111, 0, 0.22) 60%, transparent 75%);
-  filter: blur(4px);
-}
-
-.preview-reaction-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.preview-reaction-bar span {
-  padding: 0.5rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* ---------- ambient decoration ---------- */
-
-.ambient {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(20px);
-  pointer-events: none;
-  opacity: 0.6;
-  animation: float-orb 14s ease-in-out infinite;
-}
-
-.ambient-a {
-  top: 4%;
-  left: -6rem;
-  width: 18rem;
-  height: 18rem;
-  background: radial-gradient(circle, rgba(0, 255, 255, 0.38), transparent 64%);
-}
-
-.ambient-b {
-  right: -8rem;
-  bottom: 10%;
-  width: 22rem;
-  height: 22rem;
-  background: radial-gradient(circle, rgba(255, 72, 120, 0.28), transparent 62%);
-  animation-duration: 18s;
-  animation-delay: -4s;
-}
-
-.background-grid {
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 28px 28px;
-  mask-image: radial-gradient(circle at center, black 42%, transparent 100%);
-  pointer-events: none;
-}
-
-@keyframes float-orb {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(1.5rem, -1.25rem, 0);
-  }
-}
-
-/* ---------- responsive ---------- */
-
-@media (max-width: 980px) {
-  .mode-header-card,
-  .multiplayer-grid,
-  .landing-hero {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .home-shell,
-  .mode-shell {
-    padding: 0.75rem;
-  }
-
-  .hero-card,
-  .mode-header-card,
-  .mode-card,
-  .info-card {
-    border-radius: 22px;
-  }
-}
-
 /*
- * Respect a reduced-motion preference. The ambient blobs drift continuously,
- * which is exactly the sort of thing that triggers motion sickness.
+ * Respect a reduced-motion preference. Ambient drift and decorative transitions
+ * are exactly the sort of thing that triggers motion sickness. The cascade
+ * inside a live match is deliberately exempt — that is the game itself, not
+ * decoration — and each component opts back into it locally.
  */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -422,9 +150,5 @@ h2 {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-
-  .ambient {
-    animation: none !important;
   }
 }
