@@ -44,6 +44,7 @@ All five run in CI on every push and pull request.
 ```
 app/            App Router routes: / , /local , /multiplayer
 components/     React components. Presentation only.
+components/home/  The landing page's self-playing demo board.
 lib/engine/     The game engine. Pure. See the rules below.
 lib/multiplayer/ Wire protocol and the client transport hook.
 worker/         The authoritative room server (Cloudflare Durable Object).
@@ -263,16 +264,78 @@ to the engine, or online play will desync rather than merely misbehave.**
   retry is indistinguishable from a bad network, and it wasted a debugging round
   trip once already.
 
-## Tailwind v4
+## The landing page
+
+The board in the hero is **the real engine, playing itself** —
+`components/home/demo-board.tsx` runs `chooseGreedyMove` → `applyMove` →
+`framesToSteps`, the same path a match uses. It is not a loop of hand-authored
+frames, and it should not become one: tying it to the engine is what stops the
+marketing page from drifting into showing a game this app does not actually
+play. If a rule changes, the demo changes with it, for free.
+
+Three things about it are deliberate:
+
+- **It stops when it is not being watched** — an `IntersectionObserver` plus
+  `visibilitychange`. A landing page that keeps a game loop running in a
+  background tab is a battery complaint waiting to happen.
+- **Under `prefers-reduced-motion` it never animates.** It plays a *seeded* game
+  to a mid-match position and shows that still. The arena's cascade is exempt
+  from reduced motion because there the cascade is the game; here it is
+  decoration, so the exemption does not apply.
+- **The seed is fixed**, so every reduced-motion visitor sees the same considered
+  position rather than whatever chance produced. This is only possible because
+  the engine takes its randomness as an argument.
+
+Copy on this page describes what the game **does today**. It previously
+advertised multiplayer as "Phase 3" and a "Lab" long after online play shipped,
+which is worse than saying nothing. If a mode's status changes, this page is
+part of that change.
+
+## Styling
+
+### Tailwind v4
 
 v4 is CSS-first. There is **no `tailwind.config.js`** and adding one is the wrong
 move. Theme tokens are declared in an `@theme` block at the top of
 `app/globals.css`, after `@import "tailwindcss"`.
 
-Be aware most of `app/globals.css` (~900 lines) is hand-written CSS driven by
-`:root` custom properties, not utility classes. Player colour is passed down as a
-`--player-color` custom property on the element. Follow the existing pattern
-rather than converting to utilities piecemeal.
+Very little of this app is utility classes. It is hand-written CSS driven by
+`:root` custom properties. Player colour is passed down as a `--player-color`
+custom property on the element. Follow the existing pattern rather than
+converting to utilities piecemeal.
+
+### `globals.css` holds tokens and almost nothing else
+
+It is down to design tokens, the reset, and three primitives that genuinely
+every screen uses — `.primary-link`, `.ghost-link`, `.button-reset`. **Do not add
+a fourth without checking it is really shared.**
+
+Everything else is a CSS Module beside the thing it styles: `app/home.module.css`
+for the landing page, `components/**/[name].module.css` for components. This is
+the structural fix for the global-namespace collision described under *Never*
+below — a module cannot capture a class it does not own, so that bug cannot
+recur in module-scoped code.
+
+Roughly 250 lines of global CSS were deleted when the landing page moved to a
+module, most of it dead rules left over from a multiplayer placeholder page that
+no longer exists. If you find a global rule with no `.tsx` referencing it, it is
+probably also dead — grep before assuming otherwise.
+
+### Fonts
+
+Three families, loaded and self-hosted at build time by `next/font/google` in
+`app/layout.tsx`, exposed as `--font-heading` / `--font-sans` / `--font-code` and
+consumed through the `*-stack` variables in `:root`:
+
+| Role | Family | Used for |
+|---|---|---|
+| Heading | Chakra Petch | `h1`, `h2`, card and section titles |
+| Body | Archivo | running text and UI |
+| Mono | IBM Plex Mono | eyebrows, labels, counters, timers |
+
+`next/font` means there is no runtime request to a font CDN, no third-party
+connection, and no flash of unstyled text. **Do not replace this with a
+`<link>` to Google Fonts** — it would reintroduce all three.
 
 ## Sound, haptics and motion
 

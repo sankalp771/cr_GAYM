@@ -1,0 +1,405 @@
+/*
+ * The landing page.
+ *
+ * Module-scoped, so nothing in here can reach the arena — and nothing the arena
+ * adds can reach this page. The previous version lived in `globals.css` and a
+ * `.burst` rule written for the arena's particles silently captured this page's
+ * `.preview-cell.burst` modifier and shipped a broken hero to production. This
+ * file is the structural fix for that class of bug, not a stylistic preference.
+ */
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 1.25rem 1.25rem 3.5rem;
+}
+
+/* ---------- ambient decoration ---------- */
+
+.ambient {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(20px);
+  pointer-events: none;
+  opacity: 0.6;
+  animation: home-float 14s ease-in-out infinite;
+}
+
+.ambientA {
+  top: 4%;
+  left: -6rem;
+  width: 18rem;
+  height: 18rem;
+  background: radial-gradient(circle, rgba(0, 255, 255, 0.38), transparent 64%);
+}
+
+.ambientB {
+  right: -8rem;
+  bottom: 10%;
+  width: 22rem;
+  height: 22rem;
+  background: radial-gradient(circle, rgba(255, 72, 120, 0.28), transparent 62%);
+  animation-duration: 18s;
+  animation-delay: -4s;
+}
+
+.grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, black 42%, transparent 100%);
+  pointer-events: none;
+}
+
+@keyframes home-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(1.5rem, -1.25rem, 0);
+  }
+}
+
+/* ---------- shared surfaces ---------- */
+
+.card {
+  position: relative;
+  width: min(1200px, 100%);
+  margin-inline: auto;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  overflow: hidden;
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    125deg,
+    rgba(255, 255, 255, 0.09),
+    transparent 28%,
+    transparent 74%,
+    rgba(142, 249, 255, 0.06)
+  );
+}
+
+/* Sits above the ::after sheen so links stay clickable. */
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- hero ---------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  align-items: center;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.1rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(142, 249, 255, 0.28);
+  border-radius: 999px;
+  font-family: var(--font-code-stack);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.1rem, 5.6vw, 3.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.title em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.lede {
+  margin: 1.1rem 0 0;
+  max-width: 44ch;
+  color: var(--muted);
+  font-size: clamp(0.95rem, 1.4vw, 1.05rem);
+  line-height: 1.7;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 1.6rem;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  font-family: var(--font-code-stack);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dffb4;
+}
+
+.status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7dffb4;
+  box-shadow: 0 0 9px #7dffb4;
+}
+
+.specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.specs li {
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: var(--font-code-stack);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.demo {
+  display: grid;
+  gap: 0.8rem;
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
+}
+
+.demoCaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: var(--font-code-stack);
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6d84a8;
+}
+
+/* ---------- sections ---------- */
+
+.section {
+  width: min(1200px, 100%);
+  margin: 2.5rem auto 0;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.sectionLabel {
+  font-family: var(--font-code-stack);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.sectionNote {
+  margin: 0;
+  color: #6d84a8;
+  font-size: 0.85rem;
+}
+
+/* ---------- how it works ---------- */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.9rem;
+  counter-reset: step;
+}
+
+.step {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 1.1rem 1.15rem;
+}
+
+/* The numbers are real here: the three steps are a sequence, and step two only
+   makes sense after step one. */
+.step::before {
+  counter-increment: step;
+  content: counter(step, decimal-leading-zero);
+  display: block;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-code-stack);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  color: rgba(142, 249, 255, 0.55);
+}
+
+.step h3 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-heading-stack);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ---------- modes ---------- */
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.9rem;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  padding: 1.25rem;
+}
+
+.modeTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  font-family: var(--font-heading-stack);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.modeTag {
+  font-family: var(--font-code-stack);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(142, 249, 255, 0.24);
+  border-radius: 999px;
+  padding: 0.22rem 0.5rem;
+}
+
+.mode p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.modeList {
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.modeList li {
+  position: relative;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.87rem;
+  line-height: 1.55;
+}
+
+.modeList li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.65;
+}
+
+.modeAction {
+  margin-top: auto;
+  padding-top: 0.85rem;
+}
+
+.footer {
+  width: min(1200px, 100%);
+  margin: 2.5rem auto 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(150, 200, 255, 0.12);
+  color: #5f7599;
+  font-family: var(--font-code-stack);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 980px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  /* Board above the copy would push the headline below the fold on a phone. */
+  .demo {
+    order: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 0.75rem 0.75rem 2.5rem;
+  }
+
+  .card {
+    border-radius: 22px;
+  }
+
+  .section {
+    margin-top: 1.75rem;
+  }
+}
