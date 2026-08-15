@@ -59,43 +59,68 @@
     inset 0 0 14px rgba(255, 190, 78, 0.32);
 }
 
-.orbs {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
-  width: 78%;
-  height: 78%;
-  gap: 6%;
+/*
+ * Orbs.
+ *
+ * These values mirror `.orbStack` / `.orb` / `.count2-4` in
+ * `components/local/match-screen.module.css` exactly, and must keep matching
+ * them. This board is the real engine playing itself, so it has to render like
+ * the real board: an earlier version laid the orbs out with flex-wrap and a gap,
+ * which spaced them apart into loose dots while the arena's touch — the landing
+ * page was advertising a board the game does not have.
+ *
+ * The duplication is deliberate for now, so a landing-page fix does not reach
+ * into the arena. When the arena is restyled, these two should become one shared
+ * module — that is the moment to do it, and this comment is where to start.
+ */
+
+.orbStack {
+  position: relative;
+  width: 84%;
+  height: 84%;
+  display: grid;
+  place-items: center;
 }
 
 .orb {
-  width: 40%;
-  aspect-ratio: 1;
+  position: absolute;
+  width: 36%;
+  height: 36%;
   border-radius: 50%;
   background: radial-gradient(
-    circle at 36% 30%,
+    circle at 36% 32%,
     rgba(255, 255, 255, 0.95),
-    var(--player-color) 42%,
-    rgba(0, 0, 0, 0.55) 100%
+    var(--player-color) 32%,
+    color-mix(in srgb, var(--player-color) 40%, black) 80%
   );
-  box-shadow: 0 0 10px var(--player-color);
-  animation: demo-orb-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--player-color) 80%, transparent);
+  animation: demo-materialize 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* A lone orb gets the room to itself, so a cell reads as "1" at a glance
-   instead of as a small dot in a large square. */
-.orbs:has(.orb:only-child) .orb {
-  width: 54%;
-}
-
-@keyframes demo-orb-in {
+/*
+ * Animates `scale` and `opacity`, never `transform` — `transform` is carrying
+ * each orb's position within the stack, and an animation on it would snap every
+ * orb to the centre for the duration and then jump.
+ */
+@keyframes demo-materialize {
   from {
-    transform: scale(0.5);
-    opacity: 0.3;
+    opacity: 0;
+    scale: 0.3;
   }
   to {
-    transform: scale(1);
     opacity: 1;
+    scale: 1;
   }
 }
+
+/* Two orbs sit side by side, three form a triangle, four a diamond. The offsets
+   are a share of each orb's own width, so they overlap rather than separate. */
+.count2 :nth-child(1) { transform: translateX(-32%); }
+.count2 :nth-child(2) { transform: translateX(32%); }
+.count3 :nth-child(1) { transform: translate(-32%, 24%); }
+.count3 :nth-child(2) { transform: translate(32%, 24%); }
+.count3 :nth-child(3) { transform: translateY(-30%); }
+.count4 :nth-child(1) { transform: translate(-32%, -30%); }
+.count4 :nth-child(2) { transform: translate(32%, -30%); }
+.count4 :nth-child(3) { transform: translate(-32%, 30%); }
+.count4 :nth-child(4) { transform: translate(32%, 30%); }

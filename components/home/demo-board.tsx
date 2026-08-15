@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   PLAYER_COLORS,
   applyMove,
@@ -224,11 +224,18 @@ export function DemoBoard() {
                 data-burst={burst.has(key) ? "1" : undefined}
                 /* One orb short of detonating — the tension the whole game runs on. */
                 data-primed={cell.count === limit - 1 ? "1" : undefined}
+                /* Set on the cell, not the orbs, so the primed tint is the
+                   owner's colour too — exactly as the arena does it. */
+                style={
+                  cell.ownerId ? ({ ["--player-color" as string]: colorFor(cell.ownerId) } as CSSProperties) : undefined
+                }
               >
                 {cell.ownerId ? (
-                  <span className={styles.orbs} style={{ ["--player-color" as string]: colorFor(cell.ownerId) }}>
+                  <span
+                    className={`${styles.orbStack} ${styles[`count${Math.min(cell.count, 4)}`] ?? ""}`}
+                  >
                     {Array.from({ length: Math.min(cell.count, 4) }, (_, index) => (
-                      <span key={index} className={styles.orb} />
+                      <span key={index} className={styles.orb} data-testid="demo-orb" />
                     ))}
                   </span>
                 ) : null}
