@@ -158,6 +158,12 @@
   border-color: rgba(255, 146, 72, 0.4);
 }
 
+/* Only the server can set this one — it means the session token checked out. */
+.tagRegistered {
+  color: var(--accent);
+  border-color: rgba(142, 249, 255, 0.4);
+}
+
 .status {
   margin: 0;
   color: var(--muted);

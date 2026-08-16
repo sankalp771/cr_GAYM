@@ -64,6 +64,14 @@ export type RoomPlayer = {
   isReady: boolean;
   connectionStatus: ConnectionStatus;
   joinedAs: "player" | "spectator";
+  /**
+   * True when the server verified this seat's session token against a
+   * registered account. A guest can wear any unclaimed name, so this is the only
+   * thing that distinguishes the real owner of a name from somebody borrowing a
+   * spelling of it — and it is decided in `worker/room.ts`, never claimed by the
+   * client.
+   */
+  isRegistered: boolean;
 };
 
 export type RoomSettings = {
@@ -110,7 +118,9 @@ export type RoomErrorCode =
   | "illegal_move"
   | "not_ready"
   | "bad_request"
-  | "protocol_mismatch";
+  | "protocol_mismatch"
+  /** The requested name is registered to somebody else. Log in, or pick another. */
+  | "name_claimed";
 
 /* ---------- client -> server ---------- */
 

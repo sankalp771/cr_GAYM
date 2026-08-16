@@ -3,7 +3,13 @@ main = "worker/index.ts"
 compatibility_date = "2025-06-01"
 
 [durable_objects]
-bindings = [{ name = "ROOMS", class_name = "ChainReactionRoom" }]
+bindings = [
+  { name = "ROOMS", class_name = "ChainReactionRoom" },
+  # One instance, addressed by a constant name, holding every account. See
+  # `worker/accounts.ts` for why this is a Durable Object and not D1: D1 needs a
+  # `wrangler d1 create` against a real account, and this needs no setup at all.
+  { name = "ACCOUNTS", class_name = "Accounts" }
+]
 
 # SQLite-backed, and that is not a preference.
 #
@@ -15,3 +21,9 @@ bindings = [{ name = "ROOMS", class_name = "ChainReactionRoom" }]
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChainReactionRoom"]
+
+# Accounts store rows rather than holding them in memory, so this one uses its
+# SQLite for real. Same migration form and the same reason as above.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Accounts"]

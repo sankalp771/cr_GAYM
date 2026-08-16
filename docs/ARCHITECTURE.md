@@ -54,9 +54,15 @@ Responsible for:
 
 ### Database
 
-Needed later for:
+Accounts now exist and are stored in a Durable Object's SQLite — one object,
+addressed by a constant name, in `worker/accounts.ts`. That was chosen over D1
+because D1 needs a `wrangler d1 create` against a real Cloudflare account and
+this needs no setup at all. See CLAUDE.md under *Accounts* for the full
+reasoning, including why the password stretch runs in the browser and why there
+is no password reset.
 
-- accounts
+Still wanted, and the point at which the table should move to D1:
+
 - rankings
 - player history
 - room/match summaries
