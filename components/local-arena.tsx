@@ -13,14 +13,12 @@ import {
   TURN_SECONDS,
   type AiDifficulty,
   type Board,
-  type Cell,
   type GameState,
   type GridConfig,
   type Player,
   type PresetId
 } from "@/lib/engine";
 import {
-  cellKey,
   EMPTY_FLASH,
   framesToSteps,
   MIN_STEP_MS,
@@ -28,10 +26,14 @@ import {
   type AnimationStep,
   type FlashSet
 } from "@/lib/cascade-animation";
+import { buildVictoryFinale } from "@/lib/victory-finale";
+import { buildRecord, type MatchRecord, type RecordedMove } from "@/lib/replay";
 import { loadMutePreference, playSound, primeAudio, setMuted, vibrate } from "@/lib/sound";
 import { DEFAULT_DIFFICULTY, loadDifficulty, saveDifficulty } from "@/lib/preferences";
 import { SetupScreen, type SeatKind } from "@/components/local/setup-screen";
 import { MatchScreen } from "@/components/local/match-screen";
+import { ReplayActions, ReplayActionsCard } from "@/components/replay/replay-actions";
+import { ReplayScreen } from "@/components/replay/replay-screen";
 
 type GamePhase = "setup" | "playing" | "finished";
 
@@ -50,10 +52,6 @@ function defaultSeatKinds(count: number, previous: SeatKind[] = []): SeatKind[] 
   return Array.from({ length: count }, (_, index) => previous[index] ?? (index === 0 ? "human" : "computer"));
 }
 
-/** Budgets for the two waves of the end-of-match finale. See `buildVictoryFinale`. */
-const FINALE_CLAIM_BUDGET_MS = 900;
-const FINALE_BLAST_BUDGET_MS = 1300;
-
 function configForPreset(presetId: PresetId): GridConfig {
   const { size } = BOARD_PRESETS[presetId];
   return { rows: size, cols: size };
@@ -67,71 +65,6 @@ function buildPlayers(playerNames: string[]): Player[] {
     hasEnteredPlay: false,
     isEliminated: false
   }));
-}
-
-/**
- * Cosmetic end-of-match finale.
- *
- * The engine stops a decided cascade the instant one player holds every orb.
- * That is not an optimisation: orbs are conserved and the grid has no sink, so a
- * board above its own stable capacity has *no* resting configuration and the
- * reaction would run forever. The cost is that the final board is frozen
- * mid-reaction, with cells sitting at or above critical mass looking as though
- * they jammed.
- *
- * So the ending is played out for the eye instead. Two waves, radiating from the
- * deciding move: the winner claims the board, then the whole thing goes off.
- *
- * It never touches game state — `result.state` is already final and this only
- * drives `displayBoard`. Rings are Manhattan distance because that is the way
- * orbs actually travel, so the flourish moves like a real cascade rather than a
- * row-major wipe.
- *
- * Exported for `__tests__/local-arena.test.ts`, which is what holds the board to
- * finishing empty.
- */
-export function buildVictoryFinale(
-  board: Board,
-  winnerId: string,
-  origin: { row: number; col: number }
-): { steps: AnimationStep[]; durations: number[] } {
-  const working = board.map((row) => row.map((cell) => ({ ...cell })));
-  const occupied = working.flat().filter((cell) => cell.count > 0);
-  if (occupied.length === 0) return { steps: [], durations: [] };
-
-  const byDistance = new Map<number, Cell[]>();
-  for (const cell of occupied) {
-    const distance = Math.abs(cell.row - origin.row) + Math.abs(cell.col - origin.col);
-    const ring = byDistance.get(distance);
-    if (ring) ring.push(cell);
-    else byDistance.set(distance, [cell]);
-  }
-
-  const rings = [...byDistance.keys()].sort((a, b) => a - b).map((distance) => byDistance.get(distance)!);
-  const snapshot = () => working.map((row) => row.map((cell) => ({ ...cell })));
-  const keysOf = (ring: Cell[]) => new Set(ring.map((cell) => cellKey(cell.row, cell.col)));
-
-  const claim: AnimationStep[] = rings.map((ring) => {
-    for (const cell of ring) working[cell.row][cell.col].ownerId = winnerId;
-    return { board: snapshot(), flash: keysOf(ring), burst: EMPTY_FLASH, exploded: false };
-  });
-
-  const blast: AnimationStep[] = rings.map((ring) => {
-    // The owner is left in place on an emptied cell on purpose. This board is for
-    // display only, and the burst particles inherit `--player-color` from the
-    // cell — clearing the owner too would drop them back to the default cyan
-    // instead of the winner's colour.
-    for (const cell of ring) working[cell.row][cell.col].count = 0;
-    return { board: snapshot(), flash: EMPTY_FLASH, burst: keysOf(ring), exploded: true };
-  });
-
-  return {
-    steps: [...claim, ...blast],
-    durations: [
-      ...stepDurations(claim.length, FINALE_CLAIM_BUDGET_MS),
-      ...stepDurations(blast.length, FINALE_BLAST_BUDGET_MS)
-    ]
-  };
 }
 
 /**
@@ -162,6 +95,18 @@ export function LocalArena() {
   const [timerRemainingMs, setTimerRemainingMs] = useState(TURN_SECONDS * 1000);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+
+  /**
+   * The match as it is played, for the replay.
+   *
+   * Only the moves are kept — every board state a replay shows is re-derived by
+   * running them back through the engine, which is the same thing online play
+   * does to animate a broadcast move. A ref rather than state because nothing
+   * renders from it until the match ends, and `runMove` is already async.
+   */
+  const recordedMovesRef = useRef<RecordedMove[]>([]);
+  const [record, setRecord] = useState<MatchRecord | null>(null);
+  const [isWatchingReplay, setIsWatchingReplay] = useState(false);
 
   // Preferences default identically on server and client, then sync from storage
   // after mount — reading localStorage during render is a hydration mismatch.
@@ -268,6 +213,7 @@ export function LocalArena() {
       if (!isLegalMove(game, move)) return;
 
       const result = applyMove(game, move, { recordFrames: true });
+      recordedMovesRef.current.push({ playerId: actingPlayer.id, row, col, auto: source === "timeout" });
 
       setIsResolving(true);
       setStatusText(
@@ -303,6 +249,22 @@ export function LocalArena() {
         playSound("victory");
         vibrate([30, 60, 30]);
 
+        setRecord(
+          buildRecord({
+            mode: "local",
+            config: result.state.config,
+            players: result.state.players.map((player) => ({
+              id: player.id,
+              name: player.name,
+              color: player.color,
+              ...(computerSeatIds.has(player.id) ? { badge: "CPU" } : {})
+            })),
+            moves: recordedMovesRef.current,
+            winnerId: result.state.winnerId,
+            recordedAt: Date.now()
+          })
+        );
+
         setPhase("finished");
         setShowWinnerModal(true);
         setIsResolving(false);
@@ -320,7 +282,7 @@ export function LocalArena() {
             : `${actingPlayer.name} shifted the board pressure.`
       );
     },
-    [game, isResolving, playFrames]
+    [computerSeatIds, game, isResolving, playFrames]
   );
 
   // The turn timer reads the handler through a ref: the interval is created once
@@ -423,6 +385,9 @@ export function LocalArena() {
     const kinds = defaultSeatKinds(playerCount, seatKinds);
 
     aiDispatchedForMoveRef.current = -1;
+    recordedMovesRef.current = [];
+    setRecord(null);
+    setIsWatchingReplay(false);
     setComputerSeatIds(
       new Set(freshGame.players.filter((_, index) => kinds[index] === "computer").map((player) => player.id))
     );
@@ -440,6 +405,9 @@ export function LocalArena() {
   function backToSetup() {
     clearPendingTimeouts();
     aiDispatchedForMoveRef.current = -1;
+    recordedMovesRef.current = [];
+    setRecord(null);
+    setIsWatchingReplay(false);
     setComputerSeatIds(new Set<string>());
     setGame(null);
     setDisplayBoard(createEmptyBoard(configForPreset(presetId)));
@@ -450,6 +418,12 @@ export function LocalArena() {
     setIsResolving(false);
     setStatusText("Waiting for the first move.");
     setTimerRemainingMs(TURN_SECONDS * 1000);
+  }
+
+  function watchReplay() {
+    clearPendingTimeouts();
+    setShowWinnerModal(false);
+    setIsWatchingReplay(true);
   }
 
   function resetSetup() {
@@ -465,6 +439,20 @@ export function LocalArena() {
     difficulty,
     onDifficultyChange: changeDifficulty
   };
+
+  // Watching the match back takes over the screen, the way it does on Showdown.
+  // Closing it drops back onto the finished board with the result still up.
+  if (isWatchingReplay && record) {
+    return (
+      <ReplayScreen
+        record={record}
+        onExit={() => {
+          setIsWatchingReplay(false);
+          setShowWinnerModal(true);
+        }}
+      />
+    );
+  }
 
   if (phase === "setup" || !game) {
     return (
@@ -509,6 +497,8 @@ export function LocalArena() {
       showWinnerModal={showWinnerModal}
       onDismissWinner={() => setShowWinnerModal(false)}
       onRematch={startGame}
+      sideExtra={<ReplayActionsCard record={record} onWatch={watchReplay} />}
+      modalExtraActions={<ReplayActions record={record} onWatch={watchReplay} />}
       settings={settings}
     />
   );

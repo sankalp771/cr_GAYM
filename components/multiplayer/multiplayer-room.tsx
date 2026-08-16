@@ -6,7 +6,10 @@ import { BOARD_PRESETS, PLAYER_COLORS, type PresetId } from "@/lib/engine";
 import { createRoomCode, isRoomCode, normalizeRoomCode, MAX_DISPLAY_NAME } from "@/lib/multiplayer/protocol";
 import { isRoomServerMisconfigured, partyHost, useRoom } from "@/lib/multiplayer/use-room";
 import { primeAudio } from "@/lib/sound";
+import { buildRecord } from "@/lib/replay";
 import { MatchScreen } from "@/components/local/match-screen";
+import { ReplayActions } from "@/components/replay/replay-actions";
+import { ReplayScreen } from "@/components/replay/replay-screen";
 import styles from "./multiplayer-room.module.css";
 
 const NAME_KEY = "cr-gaym:display-name";
@@ -26,6 +29,7 @@ export function MultiplayerRoom() {
   const [capacity, setCapacity] = useState(2);
   const [intent, setIntent] = useState<"create" | "join" | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [isWatchingReplay, setIsWatchingReplay] = useState(false);
 
   const {
     connection,
@@ -39,6 +43,7 @@ export function MultiplayerRoom() {
     burstCells,
     frameTick,
     isResolving,
+    moveLog,
     error,
     clearError,
     send
@@ -125,6 +130,38 @@ export function MultiplayerRoom() {
     return () => window.clearInterval(id);
   }, [match]);
 
+  /**
+   * The finished match as a replay record.
+   *
+   * Only offered when this client watched every move land. A spectator who
+   * joined at move 30 has no way to reconstruct the first 29, and a replay
+   * missing its opening is a replay of a different game — so it offers nothing
+   * rather than something wrong.
+   */
+  const replayRecord = useMemo(() => {
+    if (!displayGame || displayGame.status !== "finished") return null;
+    if (!moveLog || moveLog.length !== displayGame.moveCount) return null;
+
+    return buildRecord({
+      mode: "online",
+      config: displayGame.config,
+      players: displayGame.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        color: player.color
+      })),
+      moves: moveLog.map((move) => ({
+        playerId: move.playerId,
+        row: move.row,
+        col: move.col,
+        auto: move.autoPlayed
+      })),
+      winnerId: displayGame.winnerId,
+      recordedAt: Date.now(),
+      ...(roomCode ? { roomCode } : {})
+    });
+  }, [displayGame, moveLog, roomCode]);
+
   const leave = useCallback(() => {
     send({ type: "room.leave", payload: {} });
     window.history.replaceState({}, "", "/multiplayer");
@@ -132,6 +169,12 @@ export function MultiplayerRoom() {
     setIntent(null);
     clearError();
   }, [send, clearError]);
+
+  /* ---------------- replay ---------------- */
+
+  if (isWatchingReplay && replayRecord) {
+    return <ReplayScreen record={replayRecord} onExit={() => setIsWatchingReplay(false)} />;
+  }
 
   /* ---------------- join screen ---------------- */
 
@@ -290,6 +333,9 @@ export function MultiplayerRoom() {
         onRematch={() => send({ type: "room.rematch", payload: {} })}
         rematchLabel="Back to lobby"
         canRematch={isHost}
+        modalExtraActions={
+          <ReplayActions record={replayRecord} onWatch={() => setIsWatchingReplay(true)} />
+        }
       />
     );
   }

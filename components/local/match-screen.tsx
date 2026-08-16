@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { criticalMass, TURN_SECONDS, type Board, type GameState, type Player } from "@/lib/engine";
 import { SettingsMenu, type SettingsMenuProps } from "@/components/local/settings-menu";
 import styles from "./match-screen.module.css";
@@ -43,6 +43,20 @@ type MatchScreenProps = {
   rematchLabel?: string;
   /** Online only the host may restart, so the button is hidden for everyone else. */
   canRematch?: boolean;
+
+  /**
+   * A replay has no clock and no turn to take, so it borrows this screen with
+   * the countdown off and the turn card retitled — the timer track becomes its
+   * position bar and `sideExtra` carries the transport controls.
+   */
+  showClock?: boolean;
+  turnCardTitle?: string;
+  /** Fills the turn track from an explicit 0–1 fraction instead of the clock. */
+  turnProgress?: number;
+  /** An extra panel above the turn card. */
+  sideExtra?: ReactNode;
+  /** Buttons added to the end-of-match modal, before Rematch. */
+  modalExtraActions?: ReactNode;
 };
 
 const cellKey = (row: number, col: number) => `${row},${col}`;
@@ -83,7 +97,12 @@ export function MatchScreen({
   turnLabel,
   leaveLabel = "Leave match",
   rematchLabel = "Rematch",
-  canRematch = true
+  canRematch = true,
+  showClock = true,
+  turnCardTitle = "Turn",
+  turnProgress,
+  sideExtra,
+  modalExtraActions
 }: MatchScreenProps) {
   const turnColor = currentPlayer?.color ?? "#8ef9ff";
   const isFinished = game.status === "finished";
@@ -102,7 +121,7 @@ export function MatchScreen({
           <span className={styles.turnName}>
             {isFinished ? "Match over" : (turnLabel ?? `${currentPlayer?.name ?? "Player"} to move`)}
           </span>
-          {!isFinished ? <span className={styles.turnClock}>{secondsLeft}s</span> : null}
+          {showClock && !isFinished ? <span className={styles.turnClock}>{secondsLeft}s</span> : null}
         </div>
 
         <div className={styles.topActions}>
@@ -190,12 +209,20 @@ export function MatchScreen({
         </div>
 
         <aside className={styles.side}>
+          {sideExtra}
+
           <section className={`${styles.sideCard} ${styles.turnCard}`}>
-            <h2 className={styles.sideTitle}>Turn</h2>
+            <h2 className={styles.sideTitle}>{turnCardTitle}</h2>
             <div className={styles.timerTrack}>
               <div
                 className={styles.timerFill}
-                style={{ width: `${(timerRemainingMs / (TURN_SECONDS * 1000)) * 100}%` }}
+                style={{
+                  width: `${
+                    turnProgress === undefined
+                      ? (timerRemainingMs / (TURN_SECONDS * 1000)) * 100
+                      : Math.max(0, Math.min(1, turnProgress)) * 100
+                  }%`
+                }}
               />
             </div>
             <p className={styles.statusLine}>{statusText}</p>
@@ -247,6 +274,7 @@ export function MatchScreen({
             </h2>
             <p className={styles.modalCopy}>They controlled the final chain reaction.</p>
             <div className={styles.modalActions}>
+              {modalExtraActions}
               {canRematch ? (
                 <button className="primary-link button-reset" type="button" onClick={onRematch}>
                   {rematchLabel}

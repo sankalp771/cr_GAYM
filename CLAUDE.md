@@ -45,8 +45,10 @@ All five run in CI on every push and pull request.
 app/            App Router routes: / , /local , /multiplayer
 components/     React components. Presentation only.
 components/home/  The landing page's self-playing demo board.
+components/replay/ The replay viewer and the end-of-match offer.
 lib/engine/     The game engine. Pure. See the rules below.
 lib/multiplayer/ Wire protocol and the client transport hook.
+lib/replay/     Match records, the replay timeline, and the HTML export.
 worker/         The authoritative room server (Cloudflare Durable Object).
 e2e/            Playwright specs.
 docs/           Product, architecture, roadmap, agent brief, worklogs.
@@ -253,9 +255,10 @@ to the engine, or online play will desync rather than merely misbehave.**
   is ignored rather than played twice.
 - **Joining an unknown code is an error, not a new room.** PartyKit creates a room
   on connect, so without this a typo puts you in a lobby nobody is ever joining.
-- `components/local/match-screen.tsx` is shared by both modes. Its multiplayer
-  differences are optional props (`canAct`, `seatBadge`, `settings`, …) that
-  default to local behaviour, so there is one board and one animation path.
+- `components/local/match-screen.tsx` is shared by both modes, and by the replay
+  viewer. Its differences from local play are optional props (`canAct`,
+  `seatBadge`, `settings`, `showClock`, `sideExtra`, …) that default to local
+  behaviour, so there is one board and one animation path.
 - **If `NEXT_PUBLIC_PARTYKIT_HOST` is unset on a deployment**, the client dials
   `127.0.0.1:1999` — which on a phone is the phone. The socket then retries
   forever and the lobby reads as merely slow. `isRoomServerMisconfigured()` names
@@ -263,6 +266,72 @@ to the engine, or online play will desync rather than merely misbehave.**
   connecting when nothing is listening. Do not remove either: a silent infinite
   retry is indistinguishable from a bad network, and it wasted a debugging round
   trip once already.
+
+## Replays
+
+When a match ends, both modes offer the same two things — watch it back, or
+download it — the way Pokémon Showdown does. `components/replay/replay-actions.tsx`
+is that offer, and it appears in the winner modal and, locally, in a side panel
+too, because the modal can be dismissed and the offer must not go with it.
+
+### A record is a move list, and nothing else
+
+`MatchRecord` in `lib/replay/record.ts` holds the board size, the seats, and the
+moves. Every board state a replay shows is re-derived by `expandRecord` running
+those moves back through `lib/engine` — the same trick the multiplayer client
+uses to animate a move the server never sent frames for.
+
+This is the whole design, and it depends on the engine being deterministic:
+
+- **There is one copy of the rules.** A replay cannot show a game this app would
+  not play, because it *is* this app playing it.
+- **The record is tiny.** A 375-move XXL match is a few kilobytes of moves and
+  1.4MB of frames.
+- **A rule change updates old replays for free** — and, being the same engine,
+  cannot silently disagree with them.
+
+**Do not start recording board states instead.** The moment a record carries
+positions rather than moves, it is a second source of truth for the rules.
+
+### The downloaded file is frames, not rules
+
+The one place that trade is inverted is `lib/replay/export-html.ts`. The exported
+HTML carries **serialised frames** and a viewer that only decodes and draws them.
+
+That is the deliberate opposite of the rule above, for one reason: the file has
+to open years from now, from a `file://` URL, with no network and no copy of this
+app. Embedding the engine would mean shipping a second implementation of the
+cascade inside every download — a rules fork nobody can reach or test once the
+file has left the building. Frames cost bytes instead, two characters per cell
+per frame: 55KB for a typical Classic match, 1.4MB for the worst XXL one. A test
+holds that ceiling.
+
+Everything is inlined — no script src, no stylesheet link, no font request, no
+image — and `lib/replay/__tests__/export-html.test.ts` asserts that, loads the
+result in jsdom and drives it. The file's only public surface is
+`window.chainReactionReplay`, which exists so that test can drive the player
+rather than assert on the markup that produced it. A player's name reaches the
+page only as escaped JSON and as `textContent`, and there is a test that a name
+containing `</script>` cannot break out.
+
+### Online records are all-or-nothing
+
+`useRoom` accumulates a move log and throws the whole thing away — `moveLog`
+becomes null — the moment a broadcast does not follow the one before it, or the
+client joined a match already under way. A replay missing its opening is a replay
+of a different game, so the offer simply does not appear. **Do not "repair" a
+partial log**; there is nothing to repair it from.
+
+### The finale is shared
+
+`lib/victory-finale.ts` is the winner's flourish, and it now has three consumers:
+the live match, the replay viewer and the export. It lives outside `lib/engine/`
+because it is presentation, and it exists because the engine stops a decided
+cascade mid-reaction — without it, every replay would end on a board that looks
+jammed. Its frames carry the last move's number so the counter does not tick past
+the end, which is why `moveBoundaries` skips them: counting them would drag that
+move's marker onto the emptied board and leave no index meaning "the position the
+match finished in".
 
 ## The landing page
 

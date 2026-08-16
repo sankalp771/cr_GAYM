@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVictoryFinale } from "@/components/local-arena";
+import { buildVictoryFinale } from "@/lib/victory-finale";
 import type { Board } from "@/lib/engine";
 
 /**
