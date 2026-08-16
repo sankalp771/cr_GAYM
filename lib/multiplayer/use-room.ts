@@ -100,6 +100,13 @@ export type UseRoom = {
   frameTick: number;
   isResolving: boolean;
   lastMove: PlayedMove | null;
+  /**
+   * Every move of the current match, in order — the record a replay is built
+   * from. Null once it cannot be trusted: joining mid-match, or a broadcast that
+   * did not follow the one before it. A partial log would replay a game that
+   * never happened, so it is thrown away rather than patched up.
+   */
+  moveLog: PlayedMove[] | null;
   error: RoomError;
   clearError: () => void;
   send: (message: ClientMessage) => void;
@@ -122,6 +129,7 @@ export function useRoom(roomCode: string | null): UseRoom {
   const [match, setMatch] = useState<MatchSnapshot | null>(null);
   const [error, setError] = useState<RoomError>(null);
   const [lastMove, setLastMove] = useState<PlayedMove | null>(null);
+  const [moveLog, setMoveLog] = useState<PlayedMove[] | null>([]);
 
   const [displayGame, setDisplayGame] = useState<GameState | null>(null);
   const [displayBoard, setDisplayBoard] = useState<Board>([]);
@@ -305,6 +313,7 @@ export function useRoom(roomCode: string | null): UseRoom {
           if (message.payload.room.status === "lobby") {
             setMatch(null);
             setDisplayGame(null);
+            setMoveLog([]);
             shownRef.current = null;
             pendingRef.current = null;
           }
@@ -316,6 +325,10 @@ export function useRoom(roomCode: string | null): UseRoom {
           setRoom(message.payload.room);
           setMatch(message.payload.match);
           setLastMove(null);
+          // A reconnect replays this message with the match already under way.
+          // There is no way to recover the moves already played, so the log
+          // gives up rather than pretending the match began here.
+          setMoveLog(message.payload.match.state.moveCount === 0 ? [] : null);
           applySnapshot(message.payload.match.state, null);
           break;
         case "match.updated":
@@ -323,6 +336,13 @@ export function useRoom(roomCode: string | null): UseRoom {
           setRoom(message.payload.room);
           setMatch(message.payload.match);
           setLastMove(message.payload.move);
+          setMoveLog((current) => {
+            if (current === null) return null;
+            // Duplicates and gaps are ordinary on a flaky connection, and either
+            // one makes the record wrong rather than merely short.
+            if (message.payload.match.state.moveCount !== current.length + 1) return null;
+            return [...current, message.payload.move];
+          });
           applySnapshot(message.payload.match.state, message.payload.move);
           break;
         }
@@ -364,6 +384,7 @@ export function useRoom(roomCode: string | null): UseRoom {
     frameTick,
     isResolving,
     lastMove,
+    moveLog,
     error,
     clearError,
     send

@@ -1,0 +1,33 @@
+/*
+ * The end-of-match replay offer, as a panel.
+ *
+ * The same two buttons also go straight into the winner modal's action row,
+ * where they need no wrapper at all — so the card shell lives here rather than
+ * in the component.
+ */
+
+.card {
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(142, 249, 255, 0.18);
+  background: rgba(142, 249, 255, 0.05);
+}
+
+.title {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.row > * {
+  flex: 1 1 8rem;
+  text-align: center;
+}
