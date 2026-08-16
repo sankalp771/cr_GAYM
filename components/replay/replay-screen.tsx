@@ -276,7 +276,7 @@ export function ReplayScreen({
           type="button"
           onClick={() => setSavedAs(downloadReplay(record))}
         >
-          {savedAs ? "Saved to downloads" : "Download .html"}
+          {savedAs ? "Saved to downloads" : "Download replay"}
         </button>
       ) : null}
 

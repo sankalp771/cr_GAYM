@@ -33,7 +33,7 @@ export function ReplayActions({ record, onWatch }: ReplayActionsProps) {
         title={savedAs ?? "Save this match as a self-contained HTML file"}
         onClick={() => setSavedAs(downloadReplay(record))}
       >
-        {savedAs ? "Saved" : "Download .html"}
+        {savedAs ? "Saved" : "Download replay"}
       </button>
     </>
   );

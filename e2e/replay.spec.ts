@@ -37,7 +37,7 @@ test.describe("replay", () => {
 
     const dialog = page.getByRole("dialog", { name: "Match result" });
     await expect(dialog.getByRole("button", { name: "Watch replay" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Download .html" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Download replay" })).toBeVisible();
 
     // The modal can be dismissed, so the offer also has to survive on its own.
     await dialog.getByRole("button", { name: "Rematch" }).isVisible();
@@ -73,7 +73,7 @@ test.describe("replay", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("dialog").getByRole("button", { name: "Download .html" }).click()
+      page.getByRole("dialog").getByRole("button", { name: "Download replay" }).click()
     ]);
 
     expect(download.suggestedFilename()).toMatch(/^chain-reaction-local-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
@@ -92,7 +92,7 @@ test.describe("replay", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("dialog").getByRole("button", { name: "Download .html" }).click()
+      page.getByRole("dialog").getByRole("button", { name: "Download replay" }).click()
     ]);
 
     // Saved under its own name: the browser decides what a file is from its
