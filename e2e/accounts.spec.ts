@@ -14,8 +14,15 @@ function freshName(prefix: string): string {
 
 const PASSWORD = "correct horse battery";
 
+/** The form is collapsed until asked for, so every flow starts by opening it. */
+async function openAccountForm(page: Page) {
+  await page.getByTestId("account-open").click();
+  await expect(page.getByTestId("account-panel")).toBeVisible();
+}
+
 async function registerOn(page: Page, name: string) {
   await page.goto("/multiplayer");
+  await openAccountForm(page);
   await page.getByRole("button", { name: "Register instead" }).click();
   await page.getByLabel("Name", { exact: true }).fill(name);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
@@ -47,17 +54,36 @@ test.describe("accounts", () => {
     await expect(page.getByTestId("account-chip")).toContainText(name, { timeout: 20_000 });
 
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.getByTestId("account-panel")).toBeVisible();
+    // Back to the collapsed trigger, not to an open form.
+    await expect(page.getByTestId("account-open")).toBeVisible();
+    await expect(page.getByTestId("account-panel")).toHaveCount(0);
     await expect(page.getByTestId("account-chip")).toHaveCount(0);
 
     await page.reload();
-    await expect(page.getByTestId("account-panel")).toBeVisible();
+    await expect(page.getByTestId("account-open")).toBeVisible();
+  });
+
+  test("takes no room on the page until it is asked for", async ({ page }) => {
+    await page.goto("/multiplayer");
+
+    // The whole point of the collapsed state: no form, no card, one line.
+    await expect(page.getByTestId("account-open")).toBeVisible();
+    await expect(page.getByTestId("account-panel")).toHaveCount(0);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+
+    await openAccountForm(page);
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Close sign in" }).click();
+    await expect(page.getByTestId("account-panel")).toHaveCount(0);
+    await expect(page.getByTestId("account-open")).toBeVisible();
   });
 
   test("signs back in with the same password, and refuses a wrong one", async ({ page }) => {
     const name = freshName("back");
     await registerOn(page, name);
     await page.getByRole("button", { name: "Sign out" }).click();
+    await openAccountForm(page);
 
     await page.getByLabel("Name", { exact: true }).fill(name);
     await page.getByLabel("Password", { exact: true }).fill("not the password");
@@ -73,6 +99,7 @@ test.describe("accounts", () => {
     const name = freshName("dup");
     await registerOn(page, name);
     await page.getByRole("button", { name: "Sign out" }).click();
+    await openAccountForm(page);
 
     await page.getByRole("button", { name: "Register instead" }).click();
     await page.getByLabel("Name", { exact: true }).fill(name.toUpperCase());
@@ -101,7 +128,7 @@ test.describe("accounts", () => {
     const context = await browser.newContext();
     const guest = await context.newPage();
     await guest.goto("/multiplayer");
-    await expect(guest.getByTestId("account-panel")).toBeVisible();
+    await expect(guest.getByTestId("account-open")).toBeVisible();
 
     // Spelled differently on purpose: names fold, so this is the same identity
     // and must be refused just as the exact spelling would be.

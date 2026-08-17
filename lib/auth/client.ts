@@ -9,10 +9,28 @@
  * `fetch`; the hook that holds the session lives in `use-account.ts`.
  */
 
-import { workerOrigin } from "@/lib/multiplayer/host";
+import { isLocalWorker, isRoomServerMisconfigured, partyHost, workerOrigin } from "@/lib/multiplayer/host";
 import { deriveAuthKey } from "./crypto";
 import { checkName, checkPassword } from "./identity";
 import type { Account, AuthResponse, MeResponse, NameStatusResponse } from "./protocol";
+
+/**
+ * Why the account server could not be reached.
+ *
+ * "Check your connection" is the wrong advice in two of the three cases, and
+ * this project has already lost a debugging round trip to a room server that
+ * looked like a slow network — see `isRoomServerMisconfigured`. A developer with
+ * the worker not running needs a command, not reassurance about their wifi.
+ */
+function unreachable(): string {
+  if (isRoomServerMisconfigured()) {
+    return "Accounts are not configured for this deployment — the server address is missing.";
+  }
+  if (isLocalWorker()) {
+    return `No account server at ${partyHost()}. Start it with: npm run dev:rooms`;
+  }
+  return "Could not reach the account server. Check your connection.";
+}
 
 export const SESSION_STORAGE_KEY = "cr-gaym:account";
 
@@ -56,11 +74,7 @@ async function post(path: string, body: unknown): Promise<AuthResponse> {
     });
     return (await response.json()) as AuthResponse;
   } catch {
-    return {
-      ok: false,
-      code: "server_error",
-      message: "Could not reach the account server. Check your connection."
-    };
+    return { ok: false, code: "server_error", message: unreachable() };
   }
 }
 
@@ -92,7 +106,7 @@ export async function nameStatus(name: string): Promise<NameStatusResponse> {
     const response = await fetch(`${workerOrigin()}/auth/name/${encodeURIComponent(name)}`);
     return (await response.json()) as NameStatusResponse;
   } catch {
-    return { ok: false, code: "server_error", message: "Could not reach the account server." };
+    return { ok: false, code: "server_error", message: unreachable() };
   }
 }
 
@@ -109,6 +123,6 @@ export async function fetchMe(token: string): Promise<MeResponse> {
     const response = await fetch(`${workerOrigin()}/auth/me?token=${encodeURIComponent(token)}`);
     return (await response.json()) as MeResponse;
   } catch {
-    return { ok: false, code: "server_error", message: "Could not reach the account server." };
+    return { ok: false, code: "server_error", message: unreachable() };
   }
 }

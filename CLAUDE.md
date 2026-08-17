@@ -281,6 +281,12 @@ does not, and the login panel says so.
 Sign-in lives only on the `/multiplayer` join screen. Local play has nobody to
 prove anything to, and a login on a screen that cannot use it is noise.
 
+**It is collapsed to one line until asked for.** An optional feature does not get
+a dedicated card: that spends layout on everyone who will never use it and reads
+as though it were required. The trigger expands the form; signing out collapses
+it again. Keep it that way, and keep its submit button quiet — the primary action
+on that page is Create Room.
+
 ### The identity is `toUserId`, and it is the whole security story
 
 `lib/auth/identity.ts` folds a name to lowercase alphanumerics, so `Sankalp`,

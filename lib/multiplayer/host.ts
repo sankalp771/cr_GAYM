@@ -33,6 +33,18 @@ export function workerOrigin(): string {
 }
 
 /**
+ * True when we are dialling a worker on this machine.
+ *
+ * Which means the fix for "cannot reach it" is `npm run dev:rooms`, not the
+ * player's wifi — and saying so is the difference between a five-second fix and
+ * a debugging session. See `isRoomServerMisconfigured` for the deployed variant
+ * of the same confusion.
+ */
+export function isLocalWorker(): boolean {
+  return LOCAL_HOST.test(partyHost());
+}
+
+/**
  * True when the page is deployed but still pointing at a local room server.
  *
  * This is a build-time misconfiguration — `NEXT_PUBLIC_PARTYKIT_HOST` was not

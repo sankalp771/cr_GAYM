@@ -27,18 +27,24 @@ type AccountPanelProps = {
  * the wrong one would otherwise have to type them again.
  */
 export function AccountPanel({ account, onSignedIn }: AccountPanelProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  if (account.status === "loading") {
-    return (
-      <div className={styles.panel}>
-        <p className={styles.hint}>Checking your session…</p>
-      </div>
-    );
-  }
+  const close = () => {
+    setIsOpen(false);
+    setMode("login");
+    setName("");
+    setPassword("");
+    setError(null);
+  };
+
+  // Nothing at all while the stored session is being read. A "checking…" box
+  // would be a panel that flashes up and vanishes for the majority of visitors
+  // who are not signed in, which is worse than a beat of nothing.
+  if (account.status === "loading") return null;
 
   if (account.status === "signed-in" && account.account) {
     // Signing out puts the form back the way somebody arriving would find it.
@@ -46,10 +52,7 @@ export function AccountPanel({ account, onSignedIn }: AccountPanelProps) {
     // reappears in whatever mode it was left in, with the old name still in it.
     const signOut = () => {
       account.signOut();
-      setMode("login");
-      setName("");
-      setPassword("");
-      setError(null);
+      close();
     };
 
     return (
@@ -62,6 +65,25 @@ export function AccountPanel({ account, onSignedIn }: AccountPanelProps) {
         <button className="ghost-link button-reset" type="button" onClick={signOut}>
           Sign out
         </button>
+      </div>
+    );
+  }
+
+  // Collapsed until asked for. Signing in is optional, and a form nobody
+  // requested should not be spending a card's worth of the page on the chance
+  // that they might.
+  if (!isOpen) {
+    return (
+      <div className={styles.trigger}>
+        <button
+          className={`button-reset ${styles.triggerButton}`}
+          type="button"
+          data-testid="account-open"
+          onClick={() => setIsOpen(true)}
+        >
+          Sign in or register
+        </button>
+        <span className={styles.triggerHint}>optional — guests play the same</span>
       </div>
     );
   }
@@ -85,16 +107,26 @@ export function AccountPanel({ account, onSignedIn }: AccountPanelProps) {
     <form className={styles.panel} onSubmit={submit} data-testid="account-panel">
       <div className={styles.header}>
         <h2 className={styles.title}>{mode === "login" ? "Sign in" : "Register a name"}</h2>
-        <button
-          className={`button-reset ${styles.switch}`}
-          type="button"
-          onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
-            setError(null);
-          }}
-        >
-          {mode === "login" ? "Register instead" : "I have an account"}
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            className={`button-reset ${styles.switch}`}
+            type="button"
+            onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError(null);
+            }}
+          >
+            {mode === "login" ? "Register instead" : "I have an account"}
+          </button>
+          <button
+            className={`button-reset ${styles.close}`}
+            type="button"
+            aria-label="Close sign in"
+            onClick={close}
+          >
+            &times;
+          </button>
+        </div>
       </div>
 
       <p className={styles.hint}>
