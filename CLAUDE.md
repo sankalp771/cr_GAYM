@@ -46,10 +46,13 @@ app/            App Router routes: / , /local , /multiplayer
 components/     React components. Presentation only.
 components/home/  The landing page's self-playing demo board.
 components/replay/ The replay viewer and the end-of-match offer.
+components/account/ Sign in, register, and the signed-in chip.
 lib/engine/     The game engine. Pure. See the rules below.
 lib/multiplayer/ Wire protocol and the client transport hook.
 lib/replay/     Match records, the replay timeline, and the HTML export.
-worker/         The authoritative room server (Cloudflare Durable Object).
+lib/auth/       Name identity, password crypto, and the account client.
+worker/         The authoritative room server and the account server, both
+                Cloudflare Durable Objects behind one Worker.
 e2e/            Playwright specs.
 docs/           Product, architecture, roadmap, agent brief, worklogs.
 ```
@@ -266,6 +269,87 @@ to the engine, or online play will desync rather than merely misbehave.**
   connecting when nothing is listening. Do not remove either: a silent infinite
   retry is indistinguishable from a bad network, and it wasted a debugging round
   trip once already.
+
+## Accounts
+
+Optional, name-based, and modelled on Pokémon Showdown because that is what was
+asked for. A name is the identity, registering a name claims it, and everyone
+else plays as a guest under any name nobody has claimed. **Nothing is gated
+behind an account** — there is no feature a signed-in player gets and a guest
+does not, and the login panel says so.
+
+Sign-in lives only on the `/multiplayer` join screen. Local play has nobody to
+prove anything to, and a login on a screen that cannot use it is noise.
+
+**It is collapsed to one line until asked for.** An optional feature does not get
+a dedicated card: that spends layout on everyone who will never use it and reads
+as though it were required. The trigger expands the form; signing out collapses
+it again. Keep it that way, and keep its submit button quiet — the primary action
+on that page is Create Room.
+
+### The identity is `toUserId`, and it is the whole security story
+
+`lib/auth/identity.ts` folds a name to lowercase alphanumerics, so `Sankalp`,
+`sankalp` and `S.A.N.K.A.L.P` are one account. Loosen it and two accounts
+collide; tighten it and impersonation by lookalike spelling becomes trivial.
+There is a test that walks both edges.
+
+### The slow hash runs in the browser, deliberately
+
+A free Cloudflare plan budgets a Worker roughly ten milliseconds of CPU per
+request, and PBKDF2 at any honest iteration count is tens to hundreds. So
+`deriveAuthKey` runs in the browser at 200k iterations and the server stores a
+salted SHA-256 of the result.
+
+This is not "storing a fast hash of a password", which would be the bad version.
+The property that matters survives intact: a stolen database yields
+`SHA-256(salt || authKey)`, and getting back to a password still costs a full
+PBKDF2 run per guess. Only the machine paying for the stretch moved. What it does
+cost is stated in `lib/auth/crypto.ts` — the derived key is password-equivalent
+in transit, so this leans on TLS exactly as posting a password would, and the
+iteration count cannot change without invalidating every stored hash, which is
+why the derivation salt carries a version marker.
+
+### There is no password reset, and no email
+
+Registration takes a name and a password and nothing else, so there is no
+personal data to store, leak or be asked to delete — and nothing to send a reset
+to. That is Showdown's arrangement and it is a trade, not an oversight. **Do not
+"fix" this by collecting email addresses** without deciding you want to be
+responsible for them.
+
+### Accounts are one Durable Object, not D1
+
+`worker/accounts.ts` is a single object addressed by a constant name, using the
+SQLite the `new_sqlite_classes` migration already provides. D1 is the more
+obvious home for a users table and it needs a `wrangler d1 create` against a real
+Cloudflare account, which would have made the whole feature undeliverable until
+somebody handed over credentials. This needs no setup at all.
+
+The cost is that every account read funnels through one object. That is fine at
+this size — the hot path is one indexed primary-key lookup per socket — and **if
+it ever needs to scale, move the table to D1 rather than sharding the object.**
+The schema is ordinary SQL and the move is mechanical.
+
+The token-signing secret lives in that same SQLite, minted on first use, so there
+is no secret to configure either. Deleting it signs everybody out, and that is
+the only rotation mechanism there is.
+
+### The room server never inspects a token
+
+It has no signing secret and should not have one. `worker/room.ts` asks the
+account object one question per socket — `/auth/resolve` — and gets back two
+things: who the token proves you are, and whether the name you asked for belongs
+to someone else. Both are needed. A room that only checked the first would let a
+guest sit down as anybody.
+
+That resolve happens **before the socket is accepted**, so by the time the first
+`room.join` arrives the server already knows who is on the other end. If the
+account server is unreachable the answer is "guest, name is free" — a login
+outage must not stop people playing.
+
+`isRegistered` on a seat is set by the server from that resolution and is never
+claimed by the client.
 
 ## Replays
 

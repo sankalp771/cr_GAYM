@@ -6,7 +6,9 @@ import { BOARD_PRESETS, PLAYER_COLORS, type PresetId } from "@/lib/engine";
 import { createRoomCode, isRoomCode, normalizeRoomCode, MAX_DISPLAY_NAME } from "@/lib/multiplayer/protocol";
 import { isRoomServerMisconfigured, partyHost, useRoom } from "@/lib/multiplayer/use-room";
 import { primeAudio } from "@/lib/sound";
+import { useAccount } from "@/lib/auth/use-account";
 import { buildRecord } from "@/lib/replay";
+import { AccountPanel } from "@/components/account/account-panel";
 import { MatchScreen } from "@/components/local/match-screen";
 import { ReplayActions } from "@/components/replay/replay-actions";
 import { ReplayScreen } from "@/components/replay/replay-screen";
@@ -31,6 +33,17 @@ export function MultiplayerRoom() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isWatchingReplay, setIsWatchingReplay] = useState(false);
 
+  const account = useAccount();
+
+  /**
+   * A signed-in player always plays under their registered name.
+   *
+   * The server enforces this too — it takes the name from the account rather
+   * than from the client — so this only keeps the form honest about what will
+   * actually happen.
+   */
+  const effectiveName = account.account?.name ?? displayName;
+
   const {
     connection,
     unreachable,
@@ -47,7 +60,18 @@ export function MultiplayerRoom() {
     error,
     clearError,
     send
-  } = useRoom(roomCode);
+    // Not dialled until the stored session has been read.
+    //
+    // Opening a room link goes straight past the join screen, and the session
+    // lives in `localStorage`, which may only be read in an effect after mount.
+    // Connecting on that first render would send no token and no name, so a
+    // signed-in player following a link would be seated as "Player 1" and then
+    // renamed a beat later — and would have to survive their own name being
+    // reported as claimed on the way. One render of delay avoids all of it.
+  } = useRoom(account.status === "loading" ? null : roomCode, {
+    authToken: account.token,
+    displayName: effectiveName
+  });
 
   // Names persist so a returning player is not retyping theirs every match.
   // Read after mount: reading storage during render is a hydration mismatch.
@@ -95,12 +119,12 @@ export function MultiplayerRoom() {
     if (intent === "create") {
       send({
         type: "room.create",
-        payload: { displayName, settings: { boardPreset: preset, maxPlayers: capacity } }
+        payload: { displayName: effectiveName, settings: { boardPreset: preset, maxPlayers: capacity } }
       });
     } else {
-      send({ type: "room.join", payload: { displayName } });
+      send({ type: "room.join", payload: { displayName: effectiveName } });
     }
-  }, [connection, intent, roomCode, send, displayName, preset, capacity]);
+  }, [connection, intent, roomCode, send, effectiveName, preset, capacity]);
 
   const me = useMemo(
     () => room?.players.find((player) => player.playerId === playerId) ?? null,
@@ -202,13 +226,18 @@ export function MultiplayerRoom() {
             </p>
           </div>
 
+          <AccountPanel account={account} onSignedIn={rememberName} />
+
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Your name</span>
             <input
               className={styles.control}
-              value={displayName}
+              value={effectiveName}
               maxLength={MAX_DISPLAY_NAME}
               placeholder="Player"
+              // A registered name is decided by the server, so editing it here
+              // would be a lie the lobby immediately corrects.
+              readOnly={account.status === "signed-in"}
               onChange={(event) => rememberName(event.target.value)}
             />
           </label>
@@ -321,6 +350,7 @@ export function MultiplayerRoom() {
           const seat = room?.players.find((player) => player.playerId === id);
           if (!seat) return null;
           if (seat.connectionStatus === "offline") return "OFF";
+          if (seat.isRegistered) return "REG";
           return seat.isHost ? "HOST" : null;
         }}
         onCellClick={(row, col) =>
@@ -405,6 +435,11 @@ export function MultiplayerRoom() {
             >
               <span className={styles.seatDot} />
               <span className={styles.seatName}>{seat ? seat.displayName : "Empty seat"}</span>
+              {seat?.isRegistered ? (
+                <span className={`${styles.tag} ${styles.tagRegistered}`} title="Registered name">
+                  Registered
+                </span>
+              ) : null}
               {seat?.isHost ? <span className={styles.tag}>Host</span> : null}
               {seat && !seat.isHost ? (
                 <span className={`${styles.tag} ${seat.isReady ? styles.tagReady : ""}`}>

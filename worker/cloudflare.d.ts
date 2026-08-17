@@ -30,6 +30,8 @@ declare global {
 
   interface DurableObjectStub {
     fetch(request: Request): Promise<Response>;
+    /** The same shape as global `fetch`, for object-to-object calls that build a request inline. */
+    fetch(input: string, init?: RequestInit): Promise<Response>;
   }
 
   interface DurableObjectNamespace {
@@ -37,8 +39,27 @@ declare global {
     get(id: DurableObjectId): DurableObjectStub;
   }
 
+  /**
+   * The SQLite handle a `new_sqlite_classes` object gets.
+   *
+   * `exec` returns a cursor that is iterated once; the rows are typed by the
+   * caller because SQLite has no schema to read them from at compile time.
+   */
+  interface SqlStorageCursor<T> extends Iterable<T> {
+    toArray(): T[];
+  }
+
+  interface SqlStorage {
+    exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): SqlStorageCursor<T>;
+  }
+
+  interface DurableObjectStorage {
+    readonly sql: SqlStorage;
+  }
+
   interface DurableObjectState {
     readonly id: DurableObjectId;
+    readonly storage: DurableObjectStorage;
   }
 }
 

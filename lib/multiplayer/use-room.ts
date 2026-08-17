@@ -11,6 +11,7 @@ import {
   type FlashSet
 } from "@/lib/cascade-animation";
 import { playSound, vibrate } from "@/lib/sound";
+import { partyHost } from "./host";
 import {
   decode,
   encode,
@@ -43,39 +44,9 @@ function sessionToken(): string {
   }
 }
 
-/** The deployed room server. Public — it ships in the client bundle by definition. */
-const DEPLOYED_ROOM_HOST = "cr-gaym-rooms.crgaym.workers.dev";
-
-const LOCAL_HOST = /^(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:\d+)?$/;
-
-export function partyHost(): string {
-  if (process.env.NEXT_PUBLIC_PARTYKIT_HOST) return process.env.NEXT_PUBLIC_PARTYKIT_HOST;
-
-  // Decided at runtime from where the page is served, not baked in at build time.
-  // A build-time-only default is what caused the phone to dial `127.0.0.1` — its
-  // own loopback — and retry forever: `next build` inlines `NEXT_PUBLIC_*`, so a
-  // deploy that forgot the variable had no way to recover. This way a developer
-  // on localhost gets their local server and everyone else gets the real one,
-  // with the environment variable still overriding both.
-  if (typeof window !== "undefined" && !LOCAL_HOST.test(window.location.host)) {
-    return DEPLOYED_ROOM_HOST;
-  }
-  return "127.0.0.1:1999";
-}
-
-/**
- * True when the page is deployed but still pointing at a local room server.
- *
- * This is a build-time misconfiguration — `NEXT_PUBLIC_PARTYKIT_HOST` was not
- * set — and it is worth naming explicitly, because the symptom is otherwise
- * indistinguishable from a slow network: the browser dials `127.0.0.1`, which on
- * a phone is the phone, and the socket retries forever without ever failing
- * loudly.
- */
-export function isRoomServerMisconfigured(): boolean {
-  if (typeof window === "undefined") return false;
-  return LOCAL_HOST.test(partyHost()) && !LOCAL_HOST.test(window.location.host);
-}
+// Re-exported so the page that already imports them from here does not have to
+// learn a new module for a hostname.
+export { isRoomServerMisconfigured, partyHost } from "./host";
 
 /** How long to dial before telling the player it is not working. */
 const CONNECT_TIMEOUT_MS = 8_000;
@@ -121,7 +92,22 @@ export type UseRoom = {
  * shipping frames over the wire would cost megabytes per move. If the replay does
  * not line up with the authoritative state, the board simply snaps to the truth.
  */
-export function useRoom(roomCode: string | null): UseRoom {
+/**
+ * Who this browser claims to be when it dials.
+ *
+ * Both travel as connect parameters rather than as a message, because the room
+ * server resolves them against the account server *before* it accepts the
+ * socket — by the time the first `room.join` lands it already knows whether the
+ * name is yours. Read through a ref inside the connect effect, so typing in the
+ * name field cannot drop and redial the socket.
+ */
+export type RoomIdentity = {
+  /** Session token from `useAccount`, or null to play as a guest. */
+  authToken?: string | null;
+  displayName?: string;
+};
+
+export function useRoom(roomCode: string | null, identity: RoomIdentity = {}): UseRoom {
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [unreachable, setUnreachable] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -137,6 +123,9 @@ export function useRoom(roomCode: string | null): UseRoom {
   const [burstCells, setBurstCells] = useState<FlashSet>(EMPTY_FLASH);
   const [frameTick, setFrameTick] = useState(0);
   const [isResolving, setIsResolving] = useState(false);
+
+  const identityRef = useRef<RoomIdentity>(identity);
+  identityRef.current = identity;
 
   const socketRef = useRef<PartySocket | null>(null);
   const timeoutsRef = useRef<number[]>([]);
@@ -281,7 +270,13 @@ export function useRoom(roomCode: string | null): UseRoom {
     const socket = new PartySocket({
       host: partyHost(),
       room: roomCode,
-      query: { token: sessionToken() }
+      // A function, so a reconnect re-reads these rather than replaying whatever
+      // they were when the room was first entered.
+      query: () => ({
+        token: sessionToken(),
+        auth: identityRef.current.authToken ?? "",
+        name: identityRef.current.displayName ?? ""
+      })
     });
     socketRef.current = socket;
     setConnection("connecting");

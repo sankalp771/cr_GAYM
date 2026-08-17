@@ -59,8 +59,14 @@ import {
   type RoomStatus,
   type ServerMessage
 } from "../lib/multiplayer/protocol";
+import { toUserId } from "../lib/auth/identity";
+import type { ResolveRequest, ResolveResponse } from "../lib/auth/protocol";
 
-export type Env = { ROOMS: DurableObjectNamespace };
+export type Env = {
+  ROOMS: DurableObjectNamespace;
+  /** The account server. Rooms ask it who a connecting socket is; see `onConnect`. */
+  ACCOUNTS: DurableObjectNamespace;
+};
 
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
@@ -79,12 +85,22 @@ type SeatedPlayer = {
   displayName: string;
   seatIndex: number;
   isReady: boolean;
+  /** Account id when the session token checked out, null for a guest. */
+  accountId: string | null;
   /** A player may briefly hold two sockets while a refresh hands over. */
   connections: Set<string>;
   dropTimer: ReturnType<typeof setTimeout> | null;
 };
 
 type Client = { id: string; socket: WebSocket };
+
+/** What the account server said about a socket, cached for the life of that socket. */
+type Identity = {
+  account: { id: string; name: string } | null;
+  /** The name id this was resolved for, so a rename can tell it needs asking again. */
+  resolvedFor: string;
+  nameClaimed: boolean;
+};
 
 function defaultSettings(): RoomSettings {
   const preset = BOARD_PRESETS.classic;
@@ -108,6 +124,10 @@ export class ChainReactionRoom {
   /** Session token -> playerId. The token is never broadcast; the id is. */
   private tokens = new Map<string, string>();
   private connections = new Map<string, string>();
+  /** connectionId -> what the account server said. Never trusted from the client. */
+  private identities = new Map<string, Identity>();
+  /** Seat requests already in flight, so a double-send cannot take two seats. */
+  private seating = new Set<string>();
 
   private roomCode = "";
   private hostPlayerId: string | null = null;
@@ -119,7 +139,49 @@ export class ChainReactionRoom {
   private turnDeadline = 0;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(readonly state: DurableObjectState) {}
+  constructor(
+    readonly state: DurableObjectState,
+    readonly env: Env
+  ) {}
+
+  /**
+   * Ask the account server who this is.
+   *
+   * The room never inspects a session token itself — it has no signing secret
+   * and should not have one. Answering "who are you" is the account object's
+   * job, and this is the one call per socket that asks it. A failure here is
+   * treated as "guest, and the name is free": the account server being down must
+   * not stop people playing, and the worst case is that a registered name is
+   * briefly wearable by somebody else in one room.
+   */
+  private async resolveIdentity(token: string | null, name: string | null): Promise<Identity> {
+    const resolvedFor = toUserId(name ?? "");
+    const empty: Identity = { account: null, resolvedFor, nameClaimed: false };
+
+    if (!this.env.ACCOUNTS) return empty;
+    if (!token && resolvedFor.length === 0) return empty;
+
+    try {
+      const accounts = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("accounts"));
+      const response = await accounts.fetch("https://accounts.internal/auth/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token, name } satisfies ResolveRequest)
+      });
+      if (!response.ok) return empty;
+
+      const body = (await response.json()) as ResolveResponse;
+      if (!body?.ok) return empty;
+
+      return {
+        account: body.account ? { id: body.account.id, name: body.account.name } : null,
+        resolvedFor,
+        nameClaimed: body.nameClaimed
+      };
+    } catch {
+      return empty;
+    }
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -143,6 +205,14 @@ export class ChainReactionRoom {
     const token = url.searchParams.get("token");
     if (!token) return new Response("Missing session token.", { status: 400 });
 
+    // Resolved before the socket is accepted, so that by the time any message
+    // arrives the server already knows who is on the other end. Doing it lazily
+    // would make the very first `room.join` race the answer.
+    const identity = await this.resolveIdentity(
+      url.searchParams.get("auth"),
+      url.searchParams.get("name")
+    );
+
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -150,6 +220,7 @@ export class ChainReactionRoom {
 
     const connectionId = crypto.randomUUID();
     this.clients.set(connectionId, { id: connectionId, socket: server });
+    this.identities.set(connectionId, identity);
 
     server.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") this.onMessage(event.data, connectionId);
@@ -200,6 +271,7 @@ export class ChainReactionRoom {
 
   private dropConnection(connectionId: string) {
     this.clients.delete(connectionId);
+    this.identities.delete(connectionId);
     const playerId = this.connections.get(connectionId);
     this.connections.delete(connectionId);
     if (!playerId) return;
@@ -261,16 +333,21 @@ export class ChainReactionRoom {
     if (!playerId) return this.sendError(connectionId, "bad_request", "Unknown session.");
 
     switch (message.type) {
+      // Seating is the one handler that can need the account server, so it is
+      // the one that is async. Nothing else depends on its result, and a second
+      // seat message while the first is in flight is dropped rather than queued.
       case "room.create":
-        return this.handleSeat(
+        void this.handleSeat(
           connectionId,
           playerId,
           message.payload.displayName,
           message.payload.settings,
           true
         );
+        return;
       case "room.join":
-        return this.handleSeat(connectionId, playerId, message.payload.displayName, undefined, false);
+        void this.handleSeat(connectionId, playerId, message.payload.displayName, undefined, false);
+        return;
       case "room.leave":
         this.removePlayer(playerId);
         return this.broadcastRoom();
@@ -289,7 +366,62 @@ export class ChainReactionRoom {
     }
   }
 
-  private handleSeat(
+  /**
+   * Who this connection may sit down as.
+   *
+   * A logged-in player always wears their registered name — the server's copy of
+   * it, not one the client sent — so a session token cannot be used to sit under
+   * a different spelling. A guest gets the name they asked for unless it is
+   * registered to somebody else, which is the entire point of registering one.
+   *
+   * The account server is asked again only when the requested name is not the
+   * one this socket was resolved for, so the ordinary path costs nothing.
+   */
+  private async nameFor(
+    connectionId: string,
+    requested: string,
+    seatIndex: number
+  ): Promise<{ ok: true; name: string; accountId: string | null } | { ok: false; message: string }> {
+    let identity = this.identities.get(connectionId);
+
+    // Only a guest can be asking for a different name than the one this socket
+    // was resolved for — a signed-in player's name is not theirs to choose — so
+    // the re-resolve needs no token.
+    if (identity && !identity.account && toUserId(requested) !== identity.resolvedFor) {
+      identity = await this.resolveIdentity(null, requested);
+      this.identities.set(connectionId, identity);
+    }
+
+    if (identity?.account) {
+      return { ok: true, name: identity.account.name, accountId: identity.account.id };
+    }
+    if (identity?.nameClaimed) {
+      return {
+        ok: false,
+        message: "That name is registered. Log in to use it, or pick another."
+      };
+    }
+
+    return { ok: true, name: normalizeDisplayName(requested, seatIndex), accountId: null };
+  }
+
+  private async handleSeat(
+    connectionId: string,
+    playerId: string,
+    displayName: string,
+    settings: Partial<RoomSettings> | undefined,
+    isCreate: boolean
+  ) {
+    if (this.seating.has(playerId)) return;
+    this.seating.add(playerId);
+    try {
+      await this.seat(connectionId, playerId, displayName, settings, isCreate);
+    } finally {
+      this.seating.delete(playerId);
+    }
+  }
+
+  private async seat(
     connectionId: string,
     playerId: string,
     displayName: string,
@@ -299,7 +431,10 @@ export class ChainReactionRoom {
     const existing = this.players.get(playerId);
     if (existing) {
       // Re-sending a name after a reconnect is a rename, not a second seat.
-      existing.displayName = normalizeDisplayName(displayName, existing.seatIndex);
+      const renamed = await this.nameFor(connectionId, displayName, existing.seatIndex);
+      if (!renamed.ok) return this.sendError(connectionId, "name_claimed", renamed.message);
+      existing.displayName = renamed.name;
+      existing.accountId = renamed.accountId;
       return this.broadcastRoom();
     }
 
@@ -319,11 +454,25 @@ export class ChainReactionRoom {
     }
 
     const seatIndex = this.lowestFreeSeat();
+    const claimed = await this.nameFor(connectionId, displayName, seatIndex);
+    if (!claimed.ok) return this.sendError(connectionId, "name_claimed", claimed.message);
+
+    // A registered player may hold only one seat in a room. Without this, one
+    // account logged in twice could fill a lobby with copies of itself.
+    if (claimed.accountId) {
+      for (const seated of this.players.values()) {
+        if (seated.accountId === claimed.accountId) {
+          return this.sendError(connectionId, "bad_request", "That account is already in this room.");
+        }
+      }
+    }
+
     this.players.set(playerId, {
       playerId,
-      displayName: normalizeDisplayName(displayName, seatIndex),
+      displayName: claimed.name,
       seatIndex,
       isReady: false,
+      accountId: claimed.accountId,
       connections: new Set([connectionId]),
       dropTimer: null
     });
@@ -526,7 +675,8 @@ export class ChainReactionRoom {
       isHost: seat.playerId === this.hostPlayerId,
       isReady: seat.playerId === this.hostPlayerId ? true : seat.isReady,
       connectionStatus: seat.connections.size > 0 ? "online" : "offline",
-      joinedAs: "player"
+      joinedAs: "player",
+      isRegistered: seat.accountId !== null
     }));
 
     return {

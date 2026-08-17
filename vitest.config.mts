@@ -22,7 +22,15 @@ export default defineConfig({
           // A cascade bug used to hang forever. The engine now has its own
           // internal pass ceiling, but this is the outer backstop so a
           // regression fails CI instead of blocking it.
-          testTimeout: 10_000
+          //
+          // Thirty seconds rather than ten. This is a backstop against a hang,
+          // which runs forever and is caught just as well at 30s, and it was
+          // being hit by a test that merely takes a while: the search-parity
+          // playout runs 5-11s depending on how much CPU the other project's
+          // workers have taken, and it began failing intermittently as the suite
+          // grew. Raising a hang backstop is not the same as loosening a
+          // performance budget — do not treat this as one.
+          testTimeout: 30_000
         }
       },
       {

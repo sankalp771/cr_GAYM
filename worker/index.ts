@@ -1,14 +1,36 @@
 /**
- * Worker entry point: route a request to the Durable Object for its room.
+ * Worker entry point: route a request to the Durable Object that owns it.
  *
- * The URL shape is `/parties/main/:roomCode`, kept from the PartyKit layout this
- * replaced, so the browser client needs no change — `partysocket` builds exactly
- * that path.
+ * Rooms live at `/parties/main/:roomCode`, a shape kept from the PartyKit layout
+ * this replaced so the browser client needs no change — `partysocket` builds
+ * exactly that path. Accounts live at `/auth/*` and are served by a single
+ * object; see `accounts.ts` for why it is one.
  */
 
+import { Accounts } from "./accounts";
 import { ChainReactionRoom, type Env } from "./room";
 
-export { ChainReactionRoom };
+export { Accounts, ChainReactionRoom };
+
+/**
+ * The account routes are called cross-origin — the app is on Vercel and this is
+ * on workers.dev — so they need CORS. `*` is safe here specifically because the
+ * API carries no ambient authority: there are no cookies, and every
+ * authenticated call passes its token explicitly, so a hostile page calling
+ * these routes is only ever calling them as itself.
+ */
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+  "access-control-max-age": "86400"
+};
+
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(CORS)) headers.set(key, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -29,10 +51,24 @@ const worker = {
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+
+  if (url.pathname === "/auth" || url.pathname.startsWith("/auth/")) {
+    if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
+
+    if (!env.ACCOUNTS) {
+      throw new Error("The ACCOUNTS Durable Object binding is missing from this deployment.");
+    }
+    // One object holds every account, so it is addressed by a constant name.
+    const accounts = env.ACCOUNTS.get(env.ACCOUNTS.idFromName("accounts"));
+    return withCors(await accounts.fetch(new Request(url.toString(), request)));
+  }
+
   const match = url.pathname.match(/^\/parties\/main\/([^/]+)\/?$/);
 
   if (!match) {
-    return new Response("Not found. Rooms live at /parties/main/:roomCode.", { status: 404 });
+    return new Response("Not found. Rooms live at /parties/main/:roomCode, accounts at /auth.", {
+      status: 404
+    });
   }
 
   if (!env.ROOMS) {
